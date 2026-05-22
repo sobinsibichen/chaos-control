@@ -24,6 +24,7 @@ export interface AppState {
   auth: {
     isAuthenticated: boolean;
     rememberMe: boolean;
+    token: string | null;
     user: {
       username: string;
       email: string;
@@ -65,6 +66,7 @@ const defaultState: AppState = {
   auth: {
     isAuthenticated: false,
     rememberMe: true,
+    token: null,
     user: {
       username: "Vanessa Chaos",
       email: "hello@lastpuff.app",
@@ -194,17 +196,32 @@ export function useAppStore<T>(selector: (value: AppState) => T): T {
 export const appStore = {
   hydrate,
   getState: () => state,
-  login(payload: { username: string; email: string; rememberMe: boolean }) {
+  login(payload: { username: string; email: string; rememberMe: boolean; token?: string | null }) {
     setState((current) => ({
       ...current,
       auth: {
         isAuthenticated: true,
         rememberMe: payload.rememberMe,
+        token: payload.token ?? null,
         user: {
           username: payload.username,
           email: payload.email,
           avatar: payload.username.slice(0, 1).toUpperCase(),
         },
+      },
+      stats: {
+        cigarettesToday: 0,
+        fakeQuits: 0,
+        lifetimeCigarettes: 0,
+        drinksToday: 0,
+        blockedBuys: 0,
+        drunkTexts: 0,
+        sleepDebtHours: 0,
+        exMessages: 0,
+        blockedShoppingAttempts: 0,
+        worstSleepNightHours: 0,
+        monthlyCigarettes: [0],
+        dailyCigarettes: [0],
       },
     }));
   },
@@ -214,6 +231,7 @@ export const appStore = {
       auth: {
         ...current.auth,
         isAuthenticated: false,
+        token: null,
       },
     }));
   },

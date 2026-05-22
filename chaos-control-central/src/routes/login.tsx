@@ -2,6 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { motion } from "framer-motion";
 import { Eye, Mail, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
+import { loginRequest } from "@/lib/auth-api";
 import { appStore, useAppStore } from "@/lib/app-store";
 
 export const Route = createFileRoute("/login")({
@@ -12,10 +13,14 @@ export const Route = createFileRoute("/login")({
 function LoginPage() {
   const navigate = useNavigate();
   const isAuthenticated = useAppStore((state) => state.auth.isAuthenticated);
-  const [email, setEmail] = useState("hello@lastpuff.app");
-  const [password, setPassword] = useState("lastpuff");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+
+  const isValidEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -23,12 +28,34 @@ function LoginPage() {
     }
   }, [isAuthenticated, navigate]);
 
-  const handleLogin = () => {
-    setSubmitting(true);
-    window.setTimeout(() => {
-      appStore.login({ username: "Vanessa Chaos", email, rememberMe });
+  const handleLogin = async () => {
+    if (!isValidEmail(email)) {
+      setErrorMessage("Please enter a valid email address.");
+      return;
+    }
+
+    if (!password.trim()) {
+      setErrorMessage("Please enter your password.");
+      return;
+    }
+
+    try {
+      setErrorMessage("");
+      setSubmitting(true);
+      const response = await loginRequest({ email, password });
+
+      appStore.login({
+        username: response.user.name,
+        email: response.user.email,
+        rememberMe,
+        token: response.token,
+      });
       void navigate({ to: "/home", replace: true });
-    }, 450);
+    } catch (error) {
+      console.error("Login request failed:", error);
+      setErrorMessage(error instanceof Error ? error.message : "Login error: email or password wrong.");
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -48,35 +75,43 @@ function LoginPage() {
               <label className="mb-2 block text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Email</label>
               <div className="flex items-center gap-3 rounded-2xl border border-foreground/10 bg-background/70 px-4 py-3 shadow-sm">
                 <Mail className="h-4 w-4 text-muted-foreground" />
-                <input 
-                  value={email} 
-                  onChange={(event) => setEmail(event.target.value)} 
-                  className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground" 
-                  placeholder="you@example.com"
+                <input
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                  placeholder="email"
                 />
               </div>
             </div>
             <div>
               <label className="mb-2 block text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Password</label>
               <div className="flex items-center gap-3 rounded-2xl border border-foreground/10 bg-background/70 px-4 py-3 shadow-sm">
-                <Eye className="h-4 w-4 text-muted-foreground" />
-                <input 
-                  type="password" 
-                  value={password} 
-                  onChange={(event) => setPassword(event.target.value)} 
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <Eye className="h-4 w-4" />
+                </button>
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
                   className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-                  placeholder="••••••••"
+                  placeholder="password"
                 />
               </div>
             </div>
 
+            {errorMessage ? <div className="text-sm text-red-500">{errorMessage}</div> : null}
+
             <div className="flex items-center justify-between text-sm text-muted-foreground">
               <label className="flex items-center gap-2">
-                <input 
-                  type="checkbox" 
-                  checked={rememberMe} 
-                  onChange={(event) => setRememberMe(event.target.checked)} 
-                  className="h-4 w-4 rounded border-foreground/20 bg-transparent accent-primary" 
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(event) => setRememberMe(event.target.checked)}
+                  className="h-4 w-4 rounded border-foreground/20 bg-transparent accent-primary"
                 />
                 Remember me
               </label>

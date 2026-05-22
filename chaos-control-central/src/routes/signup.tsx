@@ -1,7 +1,8 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { motion } from "framer-motion";
-import { Mail, Sparkles, User } from "lucide-react";
+import { Eye, Mail, Sparkles, User } from "lucide-react";
 import { useEffect, useState } from "react";
+import { signupRequest } from "@/lib/auth-api";
 import { appStore, useAppStore } from "@/lib/app-store";
 
 export const Route = createFileRoute("/signup")({
@@ -12,10 +13,16 @@ export const Route = createFileRoute("/signup")({
 function SignupPage() {
   const navigate = useNavigate();
   const isAuthenticated = useAppStore((state) => state.auth.isAuthenticated);
-  const [username, setUsername] = useState("Vanessa Chaos");
-  const [email, setEmail] = useState("hello@lastpuff.app");
-  const [password, setPassword] = useState("lastpuff");
-  const [confirmPassword, setConfirmPassword] = useState("lastpuff");
+  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+  const isValidEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -23,12 +30,49 @@ function SignupPage() {
     }
   }, [isAuthenticated, navigate]);
 
-  const handleSignup = () => {
-    if (password !== confirmPassword) {
+  const handleSignup = async () => {
+    if (!username.trim()) {
+      setErrorMessage("Please enter your username.");
       return;
     }
 
-    appStore.login({ username, email, rememberMe: true });
+    if (!isValidEmail(email)) {
+      setErrorMessage("Please enter a valid email address.");
+      return;
+    }
+
+    if (!password.trim()) {
+      setErrorMessage("Please enter your password.");
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setErrorMessage("Signup error: passwords do not match.");
+      return;
+    }
+
+    try {
+      setErrorMessage("");
+      setSubmitting(true);
+      const response = await signupRequest({
+        name: username,
+        email,
+        password,
+      });
+
+      appStore.login({
+        username: response.user.name,
+        email: response.user.email,
+        rememberMe: true,
+        token: response.token,
+      });
+    } catch (error) {
+      console.error("Signup request failed:", error);
+      setErrorMessage(error instanceof Error ? error.message : "Signup error: unable to create account.");
+      setSubmitting(false);
+      return;
+    }
+
     void navigate({ to: "/home", replace: true });
   };
 
@@ -49,9 +93,9 @@ function SignupPage() {
               <label className="mb-2 block text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Username</label>
               <div className="flex items-center gap-3 rounded-2xl border border-foreground/10 bg-background/70 px-4 py-3 shadow-sm">
                 <User className="h-4 w-4 text-muted-foreground" />
-                <input 
-                  value={username} 
-                  onChange={(event) => setUsername(event.target.value)} 
+                <input
+                  value={username}
+                  onChange={(event) => setUsername(event.target.value)}
                   className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
                   placeholder="Your name"
                 />
@@ -61,44 +105,61 @@ function SignupPage() {
               <label className="mb-2 block text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Email</label>
               <div className="flex items-center gap-3 rounded-2xl border border-foreground/10 bg-background/70 px-4 py-3 shadow-sm">
                 <Mail className="h-4 w-4 text-muted-foreground" />
-                <input 
-                  value={email} 
-                  onChange={(event) => setEmail(event.target.value)} 
+                <input
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
                   className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-                  placeholder="you@example.com"
+                  placeholder="Your email"
                 />
               </div>
             </div>
             <div>
               <label className="mb-2 block text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Password</label>
               <div className="flex items-center gap-3 rounded-2xl border border-foreground/10 bg-background/70 px-4 py-3 shadow-sm">
-                <input 
-                  type="password" 
-                  value={password} 
-                  onChange={(event) => setPassword(event.target.value)} 
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <Eye className="h-4 w-4" />
+                </button>
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
                   className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-                  placeholder="••••••••"
+                  placeholder="password"
                 />
               </div>
             </div>
             <div>
               <label className="mb-2 block text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Confirm Password</label>
               <div className="flex items-center gap-3 rounded-2xl border border-foreground/10 bg-background/70 px-4 py-3 shadow-sm">
-                <input 
-                  type="password" 
-                  value={confirmPassword} 
-                  onChange={(event) => setConfirmPassword(event.target.value)} 
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  className="text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <Eye className="h-4 w-4" />
+                </button>
+                <input
+                  type={showConfirmPassword ? "text" : "password"}
+                  value={confirmPassword}
+                  onChange={(event) => setConfirmPassword(event.target.value)}
                   className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-                  placeholder="••••••••"
+                  placeholder="password"
                 />
               </div>
             </div>
 
+            {errorMessage ? <div className="text-sm text-red-500">{errorMessage}</div> : null}
+
             <button
               onClick={handleSignup}
+              disabled={submitting}
               className="w-full rounded-2xl bg-primary px-5 py-3 text-sm font-semibold tracking-wide text-primary-foreground shadow-[0_16px_34px_rgba(15,23,42,0.16)] transition-all hover:bg-primary/90"
             >
-              Create Account
+              {submitting ? "Creating..." : "Create Account"}
             </button>
 
             <div className="text-center text-sm text-muted-foreground">
