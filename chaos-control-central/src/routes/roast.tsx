@@ -1,95 +1,122 @@
+import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { motion } from "framer-motion";
-import { BanknoteArrowDown, Flame, IndianRupee, MessageSquareWarning, MoonStar, ShieldBan, Skull, WalletCards } from "lucide-react";
+import { BanknoteArrowDown, Flame, IndianRupee, ShieldBan, Skull, WalletCards, Wind } from "lucide-react";
 import { AppShell } from "@/components/lp/AppShell";
 import { GlassCard } from "@/components/lp/GlassCard";
 import { TopRegretCard } from "@/components/lp/analytics/TopRegretCard";
 import { AnimatedNumber } from "@/components/lp/AnimatedNumber";
-import { getChaosMetrics } from "@/lib/chaos-metrics";
-import { useAppStore } from "@/lib/app-store";
+import { apiRequest } from "@/lib/api";
+import { queryKeys } from "@/lib/query-keys";
 
 export const Route = createFileRoute("/roast")({
   head: () => ({ meta: [{ title: "Roast Analytics - Last Puff" }] }),
   component: RoastPage,
 });
 
+interface AnalyticsPayload {
+  annualSpend: number;
+  dailyAverage: number;
+  monthlyProjection: number;
+  worstDay: { day: string; total: number } | null;
+  peakSingleDay: number;
+  highestDailySpend: number;
+  blockedPurchases: number;
+  monthlyCigarettes: number[];
+  cigarettePrice: number;
+  currencySymbol: string;
+  todaySavings: number;
+  weeklySavings: number;
+  totalSavings: number;
+  currentStreak: number;
+  lungsRecoveryPercent: number;
+  recoveryStage: string;
+  cigarettesAvoidedTotal: number;
+}
+
 function RoastPage() {
-  const state = useAppStore((value) => value);
-  const metrics = getChaosMetrics(state);
-  const chart = state.stats.monthlyCigarettes;
-  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const analyticsQuery = useQuery({
+    queryKey: queryKeys.analytics,
+    queryFn: () => apiRequest<{ success: boolean; analytics: AnalyticsPayload }>("/api/analytics/roast"),
+    refetchInterval: 60000,
+  });
+
+  const highlightsQuery = useQuery({
+    queryKey: queryKeys.highlights,
+    queryFn: () =>
+      apiRequest<{ success: boolean; highlights: AnalyticsPayload & { blockedLogs: Array<{ id: number; app_name: string; message: string | null }> } }>("/api/analytics/highlights"),
+    refetchInterval: 60000,
+  });
+
+  const analytics = analyticsQuery.data?.analytics;
+  const highlights = highlightsQuery.data?.highlights;
+  const months = ["Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May"];
+  const chart = analytics?.monthlyCigarettes ?? new Array(12).fill(0);
+  const currency = analytics?.currencySymbol ?? "Rs";
 
   const regrets = [
     {
       icon: WalletCards,
-      title: "Largest Monthly Expense",
-      value: metrics.projectedMonthlyBurn,
-      subtitle: "Your wallet has regrets.",
+      title: "Largest Monthly Burn",
+      value: analytics?.monthlyProjection ?? 0,
+      subtitle: "What smoking wants every month.",
       accent: "orange" as const,
     },
     {
       icon: Skull,
       title: "Worst Day",
-      value: "Saturday, Nov 23",
-      subtitle: `${state.stats.drunkTexts} drunk messages, ${state.stats.cigarettesToday + 16} cigarettes.`,
+      value: analytics?.worstDay?.day ? new Date(analytics.worstDay.day).toLocaleDateString("en-IN", { day: "2-digit", month: "short" }) : "No data",
+      subtitle: `${analytics?.worstDay?.total ?? 0} cigarettes on your hardest day.`,
       accent: "red" as const,
     },
     {
       icon: Flame,
       title: "Peak Single Day",
-      value: Math.max(...state.stats.dailyCigarettes),
+      value: analytics?.peakSingleDay ?? 0,
       suffix: " cigs",
-      subtitle: "That one day your health quit.",
+      subtitle: "Your old ceiling, visible in numbers.",
       accent: "pink" as const,
     },
     {
       icon: IndianRupee,
-      title: "Highest Daily Spend",
-      value: metrics.worstDailySpend,
-      subtitle: "One sunrise, multiple regrets.",
+      title: "Highest Daily Burn",
+      value: analytics?.highestDailySpend ?? 0,
+      subtitle: "One rough day, fully itemized.",
       accent: "purple" as const,
     },
     {
       icon: ShieldBan,
       title: "Blocked Purchases",
-      value: state.stats.blockedShoppingAttempts,
+      value: analytics?.blockedPurchases ?? 0,
       suffix: " blocked",
-      subtitle: "Protection system engaged.",
+      subtitle: highlights?.blockedLogs.length ? "Protection system engaged." : "No blocked purchase logs yet.",
       accent: "green" as const,
     },
     {
-      icon: MoonStar,
-      title: "Worst Sleep",
-      value: state.stats.worstSleepNightHours,
-      suffix: " hours",
-      subtitle: "Insomnia's greatest achievement.",
+      icon: Wind,
+      title: "Lungs Recovery",
+      value: analytics?.lungsRecoveryPercent ?? 0,
+      suffix: "%",
+      subtitle: analytics?.recoveryStage ?? "Oxygen improving",
       accent: "cyan" as const,
-    },
-    {
-      icon: MessageSquareWarning,
-      title: "Messages to Ex",
-      value: state.stats.exMessages,
-      suffix: " sent",
-      subtitle: "Timestamp can't be unseen.",
-      accent: "red" as const,
     },
   ];
 
   return (
     <AppShell>
       <div className="mb-6">
-        <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-foreground">Analytics</div>
-        <h1 className="text-2xl font-semibold text-foreground mt-2">Your Statistics</h1>
+        <div className="mt-2 text-[11px] font-medium uppercase tracking-[0.15em] text-foreground">Analytics</div>
+        <h1 className="mt-2 text-2xl font-semibold text-foreground">Your Statistics</h1>
       </div>
 
       <GlassCard glow="orange" className="mb-6">
         <div className="mb-4 flex items-start justify-between">
           <div>
-            <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-foreground">Annual Spend</div>
-            <div className="flex items-center text-3xl font-bold mt-1">
-              <AnimatedNumber value={metrics.moneyBurnedYear} prefix={metrics.currencySymbol} />
+            <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-foreground">Total Burn</div>
+            <div className="mt-1 flex items-center text-3xl font-bold">
+              <AnimatedNumber value={analytics?.annualSpend ?? 0} prefix={currency} />
             </div>
-            <div className="mt-1 text-[11px] text-foreground">At {metrics.currencySymbol}{state.settings.cigarettePrice} per unit</div>
+            <div className="mt-1 text-[11px] text-foreground">At {currency}{analytics?.cigarettePrice ?? 0} per cigarette</div>
           </div>
           <Flame className="h-6 w-6 animate-float text-rose-600" />
         </div>
@@ -98,9 +125,9 @@ function RoastPage() {
             <motion.div
               key={`${value}-${index}`}
               initial={{ height: 0 }}
-              animate={{ height: `${(value / Math.max(...chart)) * 100}%` }}
+              animate={{ height: `${Math.max(...chart) ? (value / Math.max(...chart)) * 100 : 0}%` }}
               transition={{ delay: index * 0.04, duration: 0.6, ease: "easeOut" }}
-              className="col-span-1 rounded-t-md bg-gradient-to-t from-amber-500 via-fuchsia-500 to-sky-500 opacity-85"
+              className="col-span-1 rounded-t-md bg-gradient-to-t from-amber-500 via-stone-500 to-stone-900 opacity-85"
             />
           ))}
         </div>
@@ -116,10 +143,10 @@ function RoastPage() {
       </div>
       <div className="mb-6 grid grid-cols-2 gap-3">
         {[
-          { icon: BanknoteArrowDown, label: "Daily Average", value: metrics.averageDailySpend, iconAccent: "text-amber-600" },
-          { icon: WalletCards, label: "Monthly Proj.", value: metrics.projectedMonthlyBurn, iconAccent: "text-fuchsia-600" },
-          { icon: Flame, label: "Skip Savings", value: metrics.savedIfSkippedToday, iconAccent: "text-emerald-600" },
-          { icon: Skull, label: "Risk Score", value: metrics.regretScore, iconAccent: "text-rose-600", suffix: "%" },
+          { icon: BanknoteArrowDown, label: "Daily Average", value: analytics?.dailyAverage ?? 0, iconAccent: "text-amber-600" },
+          { icon: WalletCards, label: "Monthly Proj.", value: analytics?.monthlyProjection ?? 0, iconAccent: "text-fuchsia-600" },
+          { icon: Flame, label: "Today Saved", value: analytics?.todaySavings ?? 0, iconAccent: "text-emerald-600" },
+          { icon: Skull, label: "Risk Score", value: Math.min(99, Math.round((analytics?.peakSingleDay ?? 0) * 4 + ((analytics?.currentStreak ?? 0) > 0 ? 0 : 20))), iconAccent: "text-rose-600", suffix: "%" },
         ].map((item, index) => (
           <motion.div
             key={item.label}
@@ -130,9 +157,31 @@ function RoastPage() {
           >
             <item.icon className={`h-5 w-5 ${item.iconAccent}`} />
             <div className="mt-3 text-2xl font-bold text-foreground">
-              <AnimatedNumber value={item.value} prefix={item.label.includes("Risk") ? "" : metrics.currencySymbol} suffix={item.suffix} />
+              <AnimatedNumber value={item.value} prefix={item.label.includes("Risk") ? "" : currency} suffix={item.suffix} />
             </div>
             <div className="text-[10px] font-medium uppercase tracking-[0.15em] text-foreground">{item.label}</div>
+          </motion.div>
+        ))}
+      </div>
+
+      <div className="mb-6 grid grid-cols-2 gap-3">
+        {[
+          { label: "Weekly Saved", value: analytics?.weeklySavings ?? 0, accent: "text-sky-600" },
+          { label: "Total Saved", value: analytics?.totalSavings ?? 0, accent: "text-emerald-600" },
+          { label: "Cigs Avoided", value: analytics?.cigarettesAvoidedTotal ?? 0, accent: "text-amber-600", suffix: "" },
+          { label: "Streak", value: analytics?.currentStreak ?? 0, accent: "text-rose-600", suffix: "" },
+        ].map((item, index) => (
+          <motion.div
+            key={item.label}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: index * 0.05 }}
+            className="glass rounded-2xl border border-foreground/10 p-4"
+          >
+            <div className="text-[10px] font-medium uppercase tracking-[0.15em] text-muted-foreground">{item.label}</div>
+            <div className={`mt-2 text-xl font-semibold ${item.accent}`}>
+              <AnimatedNumber value={item.value} prefix={item.label.includes("Saved") ? currency : ""} suffix={item.suffix} />
+            </div>
           </motion.div>
         ))}
       </div>

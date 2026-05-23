@@ -10,6 +10,8 @@ interface NearbyUserCardProps {
 }
 
 export function NearbyUserCard({ user, index, onMessage }: NearbyUserCardProps) {
+  const isImageAvatar = /^https?:\/\//.test(user.avatar) || user.avatar.startsWith("data:") || user.avatar.startsWith("/");
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 14 }}
@@ -19,7 +21,11 @@ export function NearbyUserCard({ user, index, onMessage }: NearbyUserCardProps) 
       <GlassCard className="border border-foreground/10 transition-colors hover:border-foreground/20">
         <div className="flex items-start gap-3">
           <div className="relative flex h-14 w-14 items-center justify-center rounded-lg border border-foreground/10 bg-card text-lg font-bold text-foreground shadow-sm">
-            {user.avatar}
+            {isImageAvatar ? (
+              <img src={user.avatar} alt={user.username} className="h-full w-full rounded-lg object-cover" />
+            ) : (
+              user.avatar
+            )}
             <span className={`absolute -bottom-1 -right-1 h-4 w-4 rounded-full border-2 border-background ${user.online ? "bg-emerald-400 animate-neon-pulse" : "bg-red-400"}`} />
           </div>
           <div className="min-w-0 flex-1">
@@ -28,7 +34,7 @@ export function NearbyUserCard({ user, index, onMessage }: NearbyUserCardProps) 
                 <div className="truncate text-base font-semibold text-foreground">{user.username}</div>
                 <div className="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground">
                   <MapPin className="h-3 w-3 text-cyan-400" />
-                  {user.distanceMeters}m away
+                  {user.distanceMeters >= 1000 ? `${(user.distanceMeters / 1000).toFixed(1)} km away` : `${user.distanceMeters}m away`}
                 </div>
               </div>
               <div className="rounded-lg border border-foreground/10 bg-card px-2 py-1 text-[9px] font-medium uppercase tracking-[0.15em] text-indigo-700 shadow-sm">
@@ -64,8 +70,8 @@ export function NearbyUserCard({ user, index, onMessage }: NearbyUserCardProps) 
               </button>
             </div>
             <div className="mt-3 flex items-center gap-2 text-[10px] font-medium uppercase tracking-[0.15em] text-foreground">
-              <Radio className="h-3 w-3 text-emerald-400" />
-              {user.online ? "Online" : "Offline"}
+              <Radio className={`h-3 w-3 ${user.online ? "text-emerald-400" : user.onlineStatus === "RECENTLY ACTIVE" ? "text-amber-400" : "text-rose-400"}`} />
+              {user.onlineStatus || (user.online ? "ONLINE" : "OFFLINE")}
             </div>
           </div>
         </div>

@@ -1,13 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "framer-motion";
 import { Eye, EyeOff, Radar, ScanSearch, Zap } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { io, type Socket } from "socket.io-client";
 import { AppShell } from "@/components/lp/AppShell";
 import { GlassCard } from "@/components/lp/GlassCard";
 import { ChatModal } from "@/components/lp/social/ChatModal";
 import { NearbyUserCard } from "@/components/lp/social/NearbyUserCard";
 import { RadarScannerModal } from "@/components/lp/social/RadarScannerModal";
-import { fakeReplies, generateNearbySmokers } from "@/components/lp/social-data";
+import { fakeReplies } from "@/components/lp/social-data";
+import { API_BASE_URL, apiRequest } from "@/lib/api";
 import { appStore, type NearbySmoker, useAppStore } from "@/lib/app-store";
 
 export const Route = createFileRoute("/social")({
@@ -16,18 +18,212 @@ export const Route = createFileRoute("/social")({
 });
 
 function Social() {
-  const { visibleOnRadar } = useAppStore((state) => state.settings);
+  const authUser = useAppStore((state) => state.auth.user);
+  const token = useAppStore((state) => state.auth.token);
   const { radarUsers, conversations, lastScannedAt } = useAppStore((state) => state.social);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [activeUser, setActiveUser] = useState<NearbySmoker | null>(null);
   const [typingUserId, setTypingUserId] = useState<string | null>(null);
+  const [visibleOnRadar, setVisibleOnRadar] = useState(Boolean(authUser?.visibilityEnabled));
+  const [errorMessage, setErrorMessage] = useState("");
+  const watchIdRef = useRef<number | null>(null);
+  const locationIntervalRef = useRef<number | null>(null);
+  const lastSentLocationRef = useRef<{ latitude: number; longitude: number; at: number } | null>(null);
+  const socketRef = useRef<Socket | null>(null);
+  const loadingNearbyRef = useRef(false);
 
   useEffect(() => {
-    appStore.clearRadarUsers();
+    setVisibleOnRadar(Boolean(authUser?.visibilityEnabled));
+  }, [authUser?.visibilityEnabled]);
+
+  useEffect(() => {
+    if (!visibleOnRadar) {
+      stopLocationTracking();
+      return undefined;
+    }
+
+    void startLocationTracking().catch((error: unknown) => {
+      setVisibleOnRadar(false);
+      appStore.updateUser({ visibilityEnabled: false });
+      setErrorMessage(error instanceof Error ? error.message : "Unable to start live location tracking.");
+    });
+
     return () => {
-      appStore.clearRadarUsers();
+      stopLocationTracking();
     };
+  }, [visibleOnRadar]);
+
+  useEffect(() => {
+    void loadNearbyUsers();
+  }, []);
+
+  const loadNearbyUsers = async () => {
+    if (loadingNearbyRef.current) {
+      return;
+    }
+
+    try {
+      loadingNearbyRef.current = true;
+      const response = await apiRequest<{ success: boolean; users: NearbySmoker[] }>("/api/social/nearby");
+      appStore.setRadarUsers(response.users);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to load nearby users.");
+    } finally {
+      loadingNearbyRef.current = false;
+    }
+  };
+
+  const pushLocation = async (latitude: number, longitude: number, force = false) => {
+    const now = Date.now();
+    const previous = lastSentLocationRef.current;
+    const shouldSkip =
+      !force &&
+      previous &&
+      now - previous.at < 15000 &&
+      Math.abs(previous.latitude - latitude) < 0.0005 &&
+      Math.abs(previous.longitude - longitude) < 0.0005;
+
+    if (shouldSkip) {
+      return;
+    }
+
+    await apiRequest("/api/social/location", {
+      method: "POST",
+      body: JSON.stringify({
+        latitude,
+        longitude,
+        is_visible: true,
+      }),
+    });
+
+    lastSentLocationRef.current = { latitude, longitude, at: now };
+  };
+
+  const stopLocationTracking = () => {
+    if (watchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+      watchIdRef.current = null;
+    }
+
+    if (locationIntervalRef.current !== null) {
+      window.clearInterval(locationIntervalRef.current);
+      locationIntervalRef.current = null;
+    }
+  };
+
+  const startLocationTracking = async () => {
+    if (!("geolocation" in navigator)) {
+      throw new Error("Geolocation is not available on this device.");
+    }
+
+    stopLocationTracking();
+
+    const startWatch = () =>
+      new Promise<void>((resolve, reject) => {
+        watchIdRef.current = navigator.geolocation.watchPosition(
+          (position) => {
+            void pushLocation(position.coords.latitude, position.coords.longitude);
+            resolve();
+          },
+          (error) => {
+            reject(new Error(error.message || "Location permission is required."));
+          },
+          {
+            enableHighAccuracy: false,
+            timeout: 10000,
+            maximumAge: 15000,
+          },
+        );
+      });
+
+    const primePosition = () =>
+      new Promise<void>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(
+          async (position) => {
+            try {
+              await pushLocation(position.coords.latitude, position.coords.longitude, true);
+              resolve();
+            } catch (error) {
+              reject(error);
+            }
+          },
+          (error) => reject(new Error(error.message || "Location permission is required.")),
+          {
+            enableHighAccuracy: false,
+            timeout: 10000,
+            maximumAge: 10000,
+          },
+        );
+      });
+
+    await primePosition();
+    await startWatch();
+
+    locationIntervalRef.current = window.setInterval(() => {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          void pushLocation(position.coords.latitude, position.coords.longitude);
+        },
+        () => {
+          // ignore brief location refresh errors
+        },
+        {
+          enableHighAccuracy: false,
+          timeout: 10000,
+          maximumAge: 15000,
+        },
+      );
+    }, 30000);
+  };
+
+  useEffect(() => {
+    if (!token) {
+      return undefined;
+    }
+
+    const socket = io(API_BASE_URL, {
+      auth: { token },
+      transports: ["websocket"],
+    });
+    socketRef.current = socket;
+
+    socket.on("connect", () => {
+      socket.emit("social:subscribe");
+    });
+
+    const refreshNearby = () => {
+      void loadNearbyUsers();
+    };
+
+    socket.on("user-online", refreshNearby);
+    socket.on("user-offline", refreshNearby);
+    socket.on("user-location-update", refreshNearby);
+    socket.on("streak-updated", refreshNearby);
+    socket.on("level-updated", refreshNearby);
+
+    return () => {
+      socket.emit("social:unsubscribe");
+      socket.off("user-online", refreshNearby);
+      socket.off("user-offline", refreshNearby);
+      socket.off("user-location-update", refreshNearby);
+      socket.off("streak-updated", refreshNearby);
+      socket.off("level-updated", refreshNearby);
+      socket.disconnect();
+      socketRef.current = null;
+    };
+  }, [token]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      void loadNearbyUsers();
+    }, 15000);
+
+    return () => window.clearInterval(interval);
+  }, []);
+
+  useEffect(() => () => {
+    stopLocationTracking();
   }, []);
 
   const activeConversation = useMemo(
@@ -62,10 +258,34 @@ function Social() {
     setScannerOpen(true);
     setScanning(true);
 
-    window.setTimeout(() => {
-      appStore.setRadarUsers(generateNearbySmokers());
-      setScanning(false);
-      window.setTimeout(() => setScannerOpen(false), 450);
+    window.setTimeout(async () => {
+      try {
+        if (visibleOnRadar) {
+          await new Promise<void>((resolve) => {
+            navigator.geolocation.getCurrentPosition(
+              async (position) => {
+                try {
+                  await pushLocation(position.coords.latitude, position.coords.longitude, true);
+                } finally {
+                  resolve();
+                }
+              },
+              () => resolve(),
+              { enableHighAccuracy: false, timeout: 10000, maximumAge: 10000 },
+            );
+          });
+        }
+        const response = await apiRequest<{ success: boolean; users: NearbySmoker[] }>("/api/social/radar-scan", {
+          method: "POST",
+          body: JSON.stringify({}),
+        });
+        appStore.setRadarUsers(response.users);
+      } catch (error) {
+        setErrorMessage(error instanceof Error ? error.message : "Unable to complete radar scan.");
+      } finally {
+        setScanning(false);
+        window.setTimeout(() => setScannerOpen(false), 450);
+      }
     }, 5000);
   };
 
@@ -106,7 +326,34 @@ function Social() {
             <p className="mt-1 text-xs text-muted-foreground">When visible, nearby users can find you.</p>
           </div>
           <button
-            onClick={() => appStore.updateSettings({ visibleOnRadar: !visibleOnRadar })}
+            onClick={async () => {
+              const next = !visibleOnRadar;
+              setVisibleOnRadar(next);
+              appStore.updateUser({ visibilityEnabled: next });
+              setErrorMessage("");
+
+              try {
+                if (next) {
+                  await apiRequest("/api/social/visibility", {
+                    method: "POST",
+                    body: JSON.stringify({ enabled: true }),
+                  });
+                  await loadNearbyUsers();
+                } else {
+                  stopLocationTracking();
+                  await apiRequest("/api/social/visibility", {
+                    method: "POST",
+                    body: JSON.stringify({ enabled: false }),
+                  });
+                  appStore.clearRadarUsers();
+                }
+              } catch (error: unknown) {
+                stopLocationTracking();
+                setVisibleOnRadar(!next);
+                appStore.updateUser({ visibilityEnabled: !next });
+                setErrorMessage(error instanceof Error ? error.message : "Unable to update visibility.");
+              }
+            }}
             role="switch"
             aria-checked={visibleOnRadar}
             className={`relative h-11 w-20 rounded-full border p-1 transition-colors ${
@@ -146,6 +393,7 @@ function Social() {
           <Radar className="h-5 w-5 text-primary animate-float" />
         </div>
       </motion.button>
+      {errorMessage ? <div className="mb-4 text-sm text-red-500">{errorMessage}</div> : null}
 
       <AnimatePresence mode="wait">
         {radarUsers.length > 0 ? (

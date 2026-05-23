@@ -12,6 +12,7 @@ export const Route = createFileRoute("/login")({
 
 function LoginPage() {
   const navigate = useNavigate();
+  const hydrated = useAppStore((state) => state.meta.hydrated);
   const isAuthenticated = useAppStore((state) => state.auth.isAuthenticated);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -23,10 +24,10 @@ function LoginPage() {
   const isValidEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 
   useEffect(() => {
-    if (isAuthenticated) {
+    if (hydrated && isAuthenticated) {
       void navigate({ to: "/home", replace: true });
     }
-  }, [isAuthenticated, navigate]);
+  }, [hydrated, isAuthenticated, navigate]);
 
   const handleLogin = async () => {
     if (!isValidEmail(email)) {
@@ -45,10 +46,13 @@ function LoginPage() {
       const response = await loginRequest({ email, password });
 
       appStore.login({
+        id: response.user.id,
         username: response.user.name,
         email: response.user.email,
         rememberMe,
         token: response.token,
+        cigarettePrice: response.user.cigarettePrice,
+        visibilityEnabled: response.user.visibilityEnabled,
       });
       void navigate({ to: "/home", replace: true });
     } catch (error) {

@@ -9,6 +9,7 @@ import {
 } from "@tanstack/react-router";
 
 import appCss from "../styles.css?url";
+import { LiveSync } from "@/lib/live-sync";
 
 function NotFoundComponent() {
   return (
@@ -73,7 +74,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "Last Puff — Chaos Management" },
-      { name: "description", content: "Premium cyberpunk self-control app for smokers, drinkers, and emotionally unstable late-night users." },
+      { name: "description", content: "Premium smoking recovery app with live progress, protection tools, and real-time support." },
       { name: "author", content: "Last Puff" },
       { name: "theme-color", content: "#0a0a0a" },
       { property: "og:title", content: "Last Puff" },
@@ -113,6 +114,7 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
+      <LiveSync />
       <Outlet />
     </QueryClientProvider>
   );

@@ -8,15 +8,16 @@ import { useAppStore } from "@/lib/app-store";
 export function AppShell({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const hydrated = useAppStore((state) => state.meta.hydrated);
   const isAuthenticated = useAppStore((state) => state.auth.isAuthenticated);
 
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (hydrated && !isAuthenticated) {
       void navigate({ to: "/login", replace: true });
     }
-  }, [isAuthenticated, location.pathname, navigate]);
+  }, [hydrated, isAuthenticated, location.pathname, navigate]);
 
-  if (!isAuthenticated) {
+  if (!hydrated || !isAuthenticated) {
     return null;
   }
 

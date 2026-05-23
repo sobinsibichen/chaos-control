@@ -6,10 +6,11 @@ import { appStore } from "@/lib/app-store";
 interface MentalStabilityChallengeProps {
   open: boolean;
   onClose: () => void;
+  onResult?: (result: { passed: boolean; challengeText: string; requiredAccuracy: number; attempts: number }) => void;
 }
 
 const paragraphs = [
-  "Self-control sounds noble until it is midnight, your card is warm from bad ideas, and the balcony air feels like permission. You tell yourself this next cigarette is symbolic, ceremonial, educational even, but the ash says otherwise. Discipline is not dramatic. It is dull, repetitive, and deeply inconvenient. It asks you to sit with the itch, with the boredom, with the tiny emotional riot in your chest that insists one reckless decision could become relief. It cannot. Relief purchased in smoke, drunk texts, and fake confidence always invoices you later with compound interest. The version of you that survives tomorrow needs tonight's hands to stay steady, the wallet zipped, the contacts untouched, and the lighter ignored. Regret does not arrive screaming. It arrives quietly, as notifications, receipts, screenshots, and the smell in your hoodie. Type carefully. Your impulse control is allegedly auditioning for adulthood.",
+  "Self-control sounds noble until it is midnight, your card is warm from bad ideas, and the balcony air feels like permission. You tell yourself this next cigarette is symbolic, ceremonial, educational even, but the ash says otherwise. Discipline is not dramatic. It is dull, repetitive, and deeply inconvenient. It asks you to sit with the itch, with the boredom, with the tiny emotional riot in your chest that insists one reckless decision could become relief. It cannot. Relief purchased in smoke, impulse messages, and fake confidence always invoices you later with compound interest. The version of you that survives tomorrow needs tonight's hands to stay steady, the wallet zipped, the contacts untouched, and the lighter ignored. Regret does not arrive screaming. It arrives quietly, as notifications, receipts, screenshots, and the smell in your hoodie. Type carefully. Your impulse control is allegedly auditioning for adulthood.",
   "Financial destruction rarely enters through the front door wearing a villain cape. It sneaks in disguised as a harmless order, a tiny craving, a one-time exception, a cigarette you swear you earned for enduring your own thoughts. Late-night bad decisions have a seductive script: just one more, just this once, just until the mood improves. The mood does not improve. It changes costumes, adds a headache, and leaves you checking your bank balance like a crime scene investigator. Discipline is boring because it works. It is the art of denying your most theatrical impulses before they build a stage and charge admission. Tonight, every unnecessary drag, every doomed message, every irrational purchase wants you to confuse motion with comfort. Do not. Sit in the discomfort long enough to recognize it as temporary, not prophetic. The chaos in your head is loud, but loud things are not automatically true. Accuracy matters now because your self-sabotage has always relied on technicalities and loopholes.",
   "Regret is a patient archivist. It stores the timestamp of every collapse, every receipt from a convenience store pilgrimage, every sunrise witnessed for the wrong reasons, every message sent because loneliness briefly impersonated destiny. You are not being asked to become perfect, holy, or emotionally organized. You are being asked to prove that your hands can obey your brain for one uninterrupted paragraph. That should be easy. It never is. The hardest part of discipline is how insultingly small it looks in the moment. Declining one cigarette feels trivial. Not texting your ex feels petty. Closing the shopping app feels anticlimactic. Yet entire disasters have been built out of these microscopic permissions. If you can replicate each comma, each period, each stubborn capital letter exactly, perhaps your future can trust you with one more unlocked app. If you cannot, then the lock is not punishment. It is witness protection for whatever dignity remains."
 ];
@@ -22,7 +23,7 @@ function getCharacterState(source: string, typed: string, index: number) {
   return source[index] === typed[index] ? "correct" : "wrong";
 }
 
-export function MentalStabilityChallenge({ open, onClose }: MentalStabilityChallengeProps) {
+export function MentalStabilityChallenge({ open, onClose, onResult }: MentalStabilityChallengeProps) {
   const [seed, setSeed] = useState(() => Math.floor(Math.random() * paragraphs.length));
   const [typed, setTyped] = useState("");
   const [failed, setFailed] = useState(false);
@@ -60,12 +61,14 @@ export function MentalStabilityChallenge({ open, onClose }: MentalStabilityChall
     if (mismatch) {
       setFailed(true);
       appStore.failUnlockAttempt();
+      onResult?.({ passed: false, challengeText: paragraph, requiredAccuracy: 100, attempts: 1 });
       return;
     }
 
     if (nextValue === paragraph) {
       setCompleted(true);
       appStore.unlockApps();
+      onResult?.({ passed: true, challengeText: paragraph, requiredAccuracy: 100, attempts: 1 });
     }
   };
 

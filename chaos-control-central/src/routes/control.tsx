@@ -1,10 +1,30 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { motion } from "framer-motion";
-import { BrainCircuit, MessageSquare, ShieldAlert, ShoppingCart, TriangleAlert, Heart, Bitcoin, Pizza, Clock3, LayoutGrid } from "lucide-react";
-import { useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import {
+  BrainCircuit,
+  Camera,
+  Chrome,
+  Clock3,
+  Globe,
+  Heart,
+  LayoutGrid,
+  MessageSquare,
+  Music4,
+  Pizza,
+  Plus,
+  Search,
+  ShieldAlert,
+  ShoppingBag,
+  ShoppingCart,
+  TriangleAlert,
+  Video,
+} from "lucide-react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { AppShell } from "@/components/lp/AppShell";
 import { GlassCard } from "@/components/lp/GlassCard";
 import { MentalStabilityChallenge } from "@/components/lp/damage/MentalStabilityChallenge";
+import { apiRequest } from "@/lib/api";
 import { appStore, useAppStore } from "@/lib/app-store";
 
 export const Route = createFileRoute("/control")({
@@ -12,25 +32,231 @@ export const Route = createFileRoute("/control")({
   component: ControlPage,
 });
 
-const blocked = [
-  { app: "Amazon", icon: ShoppingCart, why: "You don't need another speaker.", color: "text-orange-600" },
-  { app: "Zomato", icon: Pizza, why: "It's 2:47am. Sleep is better.", color: "text-rose-600" },
-  { app: "Tinder", icon: Heart, why: "You'll regret those messages.", color: "text-fuchsia-600" },
-  { app: "Binance", icon: Bitcoin, why: "Drunk trading = broke tomorrow.", color: "text-emerald-600" },
-  { app: "Ex", icon: MessageSquare, why: "High regret probability. Don't.", color: "text-indigo-600" },
+const appCatalog = [
+  { appName: "Instagram", packageName: "com.instagram.android", appIcon: "Camera", warningMessage: "Doom scrolling usually starts here." },
+  { appName: "Amazon", packageName: "com.amazon.mShop.android.shopping", appIcon: "ShoppingCart", warningMessage: "Impulse shopping can wait." },
+  { appName: "YouTube", packageName: "com.google.android.youtube", appIcon: "Video", warningMessage: "One video can become an hour." },
+  { appName: "Chrome", packageName: "com.android.chrome", appIcon: "Chrome", warningMessage: "Late-night browsing feeds cravings." },
+  { appName: "Snapchat", packageName: "com.snapchat.android", appIcon: "MessageSquare", warningMessage: "Protect your attention span." },
+  { appName: "Spotify", packageName: "com.spotify.music", appIcon: "Music4", warningMessage: "Some playlists trigger the habit loop." },
+  { appName: "Zomato", packageName: "com.application.zomato", appIcon: "Pizza", warningMessage: "Midnight ordering can become autopilot." },
+  { appName: "Tinder", packageName: "com.tinder", appIcon: "Heart", warningMessage: "Guard your impulse window." },
+  { appName: "Flipkart", packageName: "com.flipkart.android", appIcon: "ShoppingBag", warningMessage: "Keep the wallet calm tonight." },
+  { appName: "Maps", packageName: "com.google.android.apps.maps", appIcon: "Globe", warningMessage: "Protected by Last Puff." },
 ];
+
+const iconMap = {
+  Camera,
+  Chrome,
+  Globe,
+  Heart,
+  LayoutGrid,
+  MessageSquare,
+  Music4,
+  Pizza,
+  ShieldAlert,
+  ShoppingBag,
+  ShoppingCart,
+  Video,
+};
+
+interface AppItem {
+  id: number;
+  app_name: string;
+  package_name?: string | null;
+  app_icon: keyof typeof iconMap;
+  warning_message: string;
+  is_active: boolean;
+}
+
+interface CatalogApp {
+  appName: string;
+  packageName: string;
+  appIcon: keyof typeof iconMap;
+  warningMessage: string;
+}
+
+function ViewportPortal({ children }: { children: React.ReactNode }) {
+  if (typeof document === "undefined") {
+    return null;
+  }
+
+  return createPortal(children, document.body);
+}
 
 function ControlPage() {
   const unlockedApps = useAppStore((state) => state.damage.unlockedApps);
   const unlockFailures = useAppStore((state) => state.damage.unlockFailures);
   const [challengeOpen, setChallengeOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [searchValue, setSearchValue] = useState("");
+  const deferredSearch = useDeferredValue(searchValue);
   const [blockTime, setBlockTime] = useState("22:00");
-  const [selectedApps, setSelectedApps] = useState<string[]>(["Amazon", "Zomato"]);
+  const [apps, setApps] = useState<AppItem[]>([]);
+  const [draftSelectedPackages, setDraftSelectedPackages] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [pickerLoading, setPickerLoading] = useState(false);
+  const [savingSchedule, setSavingSchedule] = useState(false);
+  const [savingSelection, setSavingSelection] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+  const hasLoadedRef = useRef(false);
 
-  const toggleSelectedApp = (app: string) => {
-    setSelectedApps((current) =>
-      current.includes(app) ? current.filter((item) => item !== app) : [...current, app],
+  useEffect(() => {
+    const loadApps = async () => {
+      setLoading(true);
+      setErrorMessage("");
+      try {
+        const response = await apiRequest<{
+          success: boolean;
+          apps: AppItem[];
+          schedule: { block_time: string } | null;
+        }>("/api/apps");
+        setApps(response.apps);
+        if (response.schedule?.block_time) {
+          setBlockTime(response.schedule.block_time.slice(0, 5));
+        }
+      } catch (error) {
+        setErrorMessage(error instanceof Error ? error.message : "Unable to load app controls.");
+      } finally {
+        setLoading(false);
+        hasLoadedRef.current = true;
+      }
+    };
+
+    void loadApps();
+  }, []);
+
+  useEffect(() => {
+    if (!hasLoadedRef.current) {
+      return;
+    }
+
+    const timeout = window.setTimeout(async () => {
+      try {
+        setSavingSchedule(true);
+        await apiRequest("/api/apps/schedule", {
+          method: "POST",
+          body: JSON.stringify({ blockTime, frequency: "daily", enabled: true }),
+        });
+      } catch (error) {
+        setErrorMessage(error instanceof Error ? error.message : "Unable to save schedule.");
+      } finally {
+        setSavingSchedule(false);
+      }
+    }, 500);
+
+    return () => window.clearTimeout(timeout);
+  }, [blockTime]);
+
+  const selectedAppsCount = apps.filter((item) => item.is_active).length;
+
+  const pickerApps = useMemo(() => {
+    const merged = appCatalog.map((catalogItem, index) => {
+      const existing = apps.find(
+        (app) =>
+          app.package_name === catalogItem.packageName ||
+          app.app_name.toLowerCase() === catalogItem.appName.toLowerCase(),
+      );
+
+      return {
+        id: existing?.id ?? index + 1,
+        appName: existing?.app_name ?? catalogItem.appName,
+        packageName: existing?.package_name ?? catalogItem.packageName,
+        appIcon: (existing?.app_icon ?? catalogItem.appIcon) as keyof typeof iconMap,
+        warningMessage: existing?.warning_message ?? catalogItem.warningMessage,
+        isSelected: existing?.is_active ?? false,
+      };
+    });
+
+    const search = deferredSearch.trim().toLowerCase();
+    if (!search) {
+      return merged;
+    }
+
+    return merged.filter((item) => item.appName.toLowerCase().includes(search));
+  }, [apps, deferredSearch]);
+
+  const appsToRender = apps.map((item) => {
+    const catalogFallback = appCatalog.find(
+      (entry) =>
+        entry.packageName === item.package_name ||
+        entry.appName.toLowerCase() === item.app_name.toLowerCase(),
     );
+
+    return {
+      ...item,
+      app: item.app_name,
+      icon: iconMap[item.app_icon] || iconMap[catalogFallback?.appIcon || "ShieldAlert"],
+      why: item.warning_message || catalogFallback?.warningMessage || "Protected by Last Puff.",
+      isProtected: item.is_active,
+    };
+  });
+
+  const openPicker = () => {
+    setPickerLoading(true);
+    setDraftSelectedPackages(
+      apps
+        .filter((app) => app.is_active)
+        .map((app) => app.package_name || app.app_name),
+    );
+    setPickerOpen(true);
+    window.setTimeout(() => setPickerLoading(false), 300);
+  };
+
+  const toggleDraftSelection = (catalogApp: CatalogApp) => {
+    const key = catalogApp.packageName || catalogApp.appName;
+    setDraftSelectedPackages((current) =>
+      current.includes(key)
+        ? current.filter((item) => item !== key)
+        : [...current, key],
+    );
+  };
+
+  const saveSelectedApps = async () => {
+    const selectedApps = appCatalog.filter((item) =>
+      draftSelectedPackages.includes(item.packageName || item.appName),
+    );
+
+    if (!selectedApps.length) {
+      setPickerOpen(false);
+      return;
+    }
+
+    try {
+      setSavingSelection(true);
+      setErrorMessage("");
+      const response = await apiRequest<{
+        success: boolean;
+        apps: AppItem[];
+        schedule: { block_time: string } | null;
+      }>("/api/apps/save-selection", {
+        method: "POST",
+        body: JSON.stringify({
+          apps: selectedApps,
+        }),
+      });
+      setApps(response.apps);
+      setPickerOpen(false);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to save selected apps.");
+    } finally {
+      setSavingSelection(false);
+    }
+  };
+
+  const toggleSelectedApp = async (app: AppItem) => {
+    const nextIsActive = !app.is_active;
+    setApps((current) => current.map((item) => (item.id === app.id ? { ...item, is_active: nextIsActive } : item)));
+
+    try {
+      await apiRequest("/api/apps/toggle", {
+        method: "PUT",
+        body: JSON.stringify({ id: app.id, isActive: nextIsActive }),
+      });
+    } catch (error) {
+      setApps((current) => current.map((item) => (item.id === app.id ? { ...item, is_active: app.is_active } : item)));
+      setErrorMessage(error instanceof Error ? error.message : "Unable to update blocked app.");
+    }
   };
 
   return (
@@ -48,10 +274,10 @@ function ControlPage() {
           <div className="flex-1">
             <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Status</div>
             <div className="mt-1 text-lg font-semibold text-foreground">
-              {unlockedApps ? "Protection Disabled" : "Protection Active"}
+              {unlockedApps ? "Protection Disabled" : selectedAppsCount ? "Protection Active" : "Protection Idle"}
             </div>
             <div className="mt-1 text-xs text-muted-foreground">
-              {unlockedApps ? "Apps are accessible. Proceed with caution." : "5 apps blocked. You're safe."}
+              {unlockedApps ? "Apps are accessible. Proceed with caution." : `${selectedAppsCount} apps blocked. You're safe.`}
             </div>
           </div>
         </div>
@@ -83,49 +309,75 @@ function ControlPage() {
                 Daily
               </div>
             </div>
+            <div className="mt-2 text-[11px] text-muted-foreground">{savingSchedule ? "Saving schedule..." : "Schedule saved automatically."}</div>
           </div>
 
           <div className="rounded-2xl border border-foreground/10 bg-card p-4 shadow-sm">
-            <div className="mb-2 flex items-center justify-between">
+            <div className="mb-3 flex items-center justify-between">
               <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Choose Apps</div>
               <LayoutGrid className="h-4 w-4 text-sky-600" />
             </div>
-            <div className="space-y-2">
-              {blocked.map((item) => {
-                const active = selectedApps.includes(item.app);
-                const Icon = item.icon;
-                return (
-                  <button
-                    key={item.app}
-                    onClick={() => toggleSelectedApp(item.app)}
-                    className={`flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-all ${
-                      active
-                        ? "border-foreground bg-foreground text-background"
-                        : "border-foreground/10 bg-background text-foreground hover:bg-muted/60"
-                    }`}
-                  >
-                    <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${active ? "bg-background/10" : "bg-foreground/5"} ${item.color}`}>
-                      <Icon className="h-4 w-4" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="text-sm font-semibold">{item.app}</div>
-                      <div className={`mt-1 text-[11px] ${active ? "text-background/75" : "text-muted-foreground"}`}>
-                        Tap to block or unblock this app
+
+            <motion.button
+              whileTap={{ scale: 0.98 }}
+              onClick={openPicker}
+              className="flex w-full items-center justify-center gap-2 rounded-full bg-black px-4 py-3 text-sm font-semibold text-white shadow-[0_18px_36px_rgba(15,23,42,0.18)] transition-all hover:bg-black/90"
+            >
+              <Plus className="h-4 w-4" />
+              Choose Apps
+            </motion.button>
+
+            <div className="mt-3 text-[11px] text-muted-foreground">
+              Nothing will appear here until you choose apps and save them.
+            </div>
+
+            <div className="mt-4 space-y-2">
+              {appsToRender.length ? (
+                appsToRender.map((item, index) => {
+                  const Icon = item.icon;
+                  const active = item.isProtected;
+
+                  return (
+                    <motion.button
+                      key={item.id}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: index * 0.04 }}
+                      onClick={() => void toggleSelectedApp(item)}
+                      className={`flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-all ${
+                        active
+                          ? "border-foreground bg-foreground text-background"
+                          : "border-foreground/10 bg-background text-foreground hover:bg-muted/60"
+                      }`}
+                    >
+                      <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${active ? "bg-background/10" : "bg-foreground/5"}`}>
+                        <Icon className="h-4 w-4" />
                       </div>
-                    </div>
-                    <div className={`flex h-6 w-6 items-center justify-center rounded-full border ${active ? "border-background bg-background text-foreground" : "border-foreground/10 bg-card text-foreground"}`}>
-                      {active ? "✓" : ""}
-                    </div>
-                  </button>
-                );
-              })}
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-semibold">{item.app}</div>
+                        <div className={`mt-1 text-[11px] ${active ? "text-background/75" : "text-muted-foreground"}`}>
+                          Tap to block or unblock this app
+                        </div>
+                      </div>
+                      <div className={`flex h-6 w-6 items-center justify-center rounded-full border ${active ? "border-background bg-background text-foreground" : "border-foreground/10 bg-card text-foreground"}`}>
+                        {active ? "OK" : ""}
+                      </div>
+                    </motion.button>
+                  );
+                })
+              ) : (
+                <div className="rounded-2xl border border-dashed border-foreground/10 bg-background px-4 py-5 text-center">
+                  <div className="text-sm font-semibold text-foreground">No protected apps selected yet.</div>
+                  <div className="mt-1 text-xs text-muted-foreground">Choose apps that trigger cravings or impulsive behavior.</div>
+                </div>
+              )}
             </div>
           </div>
 
           <div className="flex items-center justify-between rounded-2xl border border-foreground/10 bg-background px-4 py-3 shadow-sm">
             <div>
               <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Selected Apps</div>
-              <div className="mt-1 text-sm font-semibold text-foreground">{selectedApps.length} chosen</div>
+              <div className="mt-1 text-sm font-semibold text-foreground">{selectedAppsCount} chosen</div>
             </div>
             <div className="text-right">
               <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Time</div>
@@ -138,24 +390,25 @@ function ControlPage() {
       <div className="mb-4">
         <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Blocked Applications</div>
       </div>
+      {errorMessage ? <div className="mb-4 text-sm text-red-500">{errorMessage}</div> : null}
       <div className="space-y-2.5">
-        {blocked.map((item, index) => (
+        {appsToRender.map((item, index) => (
           <motion.div
-            key={item.app}
+            key={item.id}
             initial={{ opacity: 0, x: -10 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: index * 0.06 }}
           >
             <GlassCard className="!p-4">
               <div className="flex items-center gap-3">
-                <div className={`relative flex h-10 w-10 items-center justify-center rounded-2xl bg-foreground/5 ${item.color}`}>
+                <div className="relative flex h-10 w-10 items-center justify-center rounded-2xl bg-foreground/5">
                   <item.icon className="h-5 w-5" />
                   <div
                     className={`absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full border border-background text-[10px] font-bold ${
-                      unlockedApps ? "bg-emerald-400 text-background" : "bg-primary text-primary-foreground"
+                      unlockedApps ? "bg-emerald-400 text-background" : item.isProtected ? "bg-primary text-primary-foreground" : "bg-muted text-foreground"
                     }`}
                   >
-                    {unlockedApps ? "✓" : "🔒"}
+                    {unlockedApps ? "OK" : item.isProtected ? "ON" : "OFF"}
                   </div>
                 </div>
                 <div className="min-w-0 flex-1">
@@ -176,7 +429,7 @@ function ControlPage() {
                       : "border border-primary/20 bg-primary text-primary-foreground shadow-sm"
                   }`}
                 >
-                  {unlockedApps ? "Unlock" : "Verify"}
+                  {unlockedApps ? "Unlocked" : "Verify"}
                 </button>
               </div>
             </GlassCard>
@@ -216,7 +469,139 @@ function ControlPage() {
         </button>
       </GlassCard>
 
-      <MentalStabilityChallenge open={challengeOpen} onClose={() => setChallengeOpen(false)} />
+      <MentalStabilityChallenge
+        open={challengeOpen}
+        onClose={() => setChallengeOpen(false)}
+        onResult={(result) => {
+          void apiRequest("/api/apps/verify", {
+            method: "POST",
+            body: JSON.stringify(result),
+          }).catch((error: unknown) => {
+            setErrorMessage(error instanceof Error ? error.message : "Unable to save verification result.");
+          });
+        }}
+      />
+
+      <ViewportPortal>
+        <AnimatePresence>
+          {pickerOpen ? (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setPickerOpen(false)}
+              className="fixed inset-0 z-[150] flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
+            >
+              <motion.div
+                initial={{ opacity: 0, y: 24, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 24, scale: 0.98 }}
+                transition={{ duration: 0.35, ease: "easeOut" }}
+                onClick={(event) => event.stopPropagation()}
+                className="max-h-[88vh] w-full max-w-2xl overflow-hidden rounded-[2rem] border border-white/20 bg-white/95 shadow-[0_24px_70px_rgba(15,23,42,0.22)] backdrop-blur-xl"
+              >
+                <div className="px-5 pb-5 pt-4">
+                  <div className="mb-4 flex items-center justify-between">
+                    <div>
+                      <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Choose Apps</div>
+                      <div className="mt-1 text-xl font-semibold text-foreground">Protected App Picker</div>
+                      <div className="mt-1 text-xs text-muted-foreground">Choose the apps you want blocked, then save. Nothing is pre-added anymore.</div>
+                    </div>
+                    <button
+                      onClick={() => setPickerOpen(false)}
+                      className="rounded-full border border-foreground/10 bg-card px-3 py-2 text-xs font-semibold text-foreground"
+                    >
+                      Close
+                    </button>
+                  </div>
+
+                  <div className="mb-4 flex items-center gap-3 rounded-2xl border border-foreground/10 bg-card px-4 py-3 shadow-sm">
+                    <Search className="h-4 w-4 text-muted-foreground" />
+                    <input
+                      value={searchValue}
+                      onChange={(event) => setSearchValue(event.target.value)}
+                      placeholder="Search apps"
+                      className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                    />
+                  </div>
+
+                  <div className="max-h-[52vh] space-y-2 overflow-y-auto pr-1">
+                    {pickerLoading
+                      ? Array.from({ length: 6 }).map((_, index) => (
+                          <div key={index} className="animate-pulse rounded-2xl border border-foreground/10 bg-card px-4 py-4">
+                            <div className="flex items-center gap-3">
+                              <div className="h-10 w-10 rounded-xl bg-foreground/10" />
+                              <div className="flex-1">
+                                <div className="h-3 w-28 rounded bg-foreground/10" />
+                                <div className="mt-2 h-3 w-20 rounded bg-foreground/10" />
+                              </div>
+                              <div className="h-5 w-5 rounded border border-foreground/10" />
+                            </div>
+                          </div>
+                        ))
+                      : pickerApps.map((item, index) => {
+                          const Icon = iconMap[item.appIcon] || ShieldAlert;
+                          const key = item.packageName || item.appName;
+                          const selected = draftSelectedPackages.includes(key);
+
+                          return (
+                            <motion.button
+                              key={key}
+                              initial={{ opacity: 0, y: 8 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              transition={{ delay: index * 0.02 }}
+                              onClick={() => toggleDraftSelection(item)}
+                              className={`flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-all ${
+                                selected
+                                  ? "border-foreground bg-foreground text-background"
+                                  : "border-foreground/10 bg-card text-foreground"
+                              }`}
+                            >
+                              <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${selected ? "bg-background/10" : "bg-foreground/5"}`}>
+                                <Icon className="h-4 w-4" />
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="text-sm font-semibold">{item.appName}</div>
+                                <div className={`mt-1 text-[11px] ${selected ? "text-background/75" : "text-muted-foreground"}`}>
+                                  {item.packageName}
+                                </div>
+                              </div>
+                              <div className={`flex h-5 w-5 items-center justify-center rounded-md border ${selected ? "border-background bg-background text-foreground" : "border-foreground/10 bg-background"}`}>
+                                {selected ? "OK" : ""}
+                              </div>
+                            </motion.button>
+                          );
+                        })}
+
+                    {!pickerLoading && !pickerApps.length ? (
+                      <div className="rounded-2xl border border-dashed border-foreground/10 bg-card px-4 py-8 text-center">
+                        <div className="text-sm font-semibold text-foreground">No apps matched your search.</div>
+                        <div className="mt-1 text-xs text-muted-foreground">Try Instagram, Chrome, Amazon, or YouTube.</div>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className="mt-4 flex items-center justify-between rounded-2xl border border-foreground/10 bg-card px-4 py-3 shadow-sm">
+                    <div>
+                      <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Selected</div>
+                      <div className="mt-1 text-sm font-semibold text-foreground">{draftSelectedPackages.length} apps ready</div>
+                    </div>
+                    <button
+                      onClick={() => void saveSelectedApps()}
+                      disabled={savingSelection}
+                      className="rounded-full bg-black px-4 py-3 text-xs font-semibold text-white shadow-[0_16px_34px_rgba(15,23,42,0.18)] transition-all hover:bg-black/90 disabled:opacity-70"
+                    >
+                      {savingSelection ? "Saving..." : "Save Selected Apps"}
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+      </ViewportPortal>
+
+      {loading ? <div className="mt-4 text-center text-xs text-muted-foreground">Loading live app controls...</div> : null}
     </AppShell>
   );
 }

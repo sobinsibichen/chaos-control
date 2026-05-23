@@ -1,4 +1,5 @@
 import { useEffect, useSyncExternalStore } from "react";
+import { clearSession, getStoredToken, getStoredUser, storeSession, type SessionUser } from "@/lib/session";
 
 const STORAGE_KEY = "last-puff-app-state";
 
@@ -11,6 +12,11 @@ export interface NearbySmoker {
   mood: string;
   chaosLevel: number;
   online: boolean;
+  streak?: number;
+  level?: number;
+  smokeFreeSeconds?: number;
+  smokeFreeLabel?: string;
+  onlineStatus?: "ONLINE" | "RECENTLY ACTIVE" | "OFFLINE" | string;
 }
 
 export interface ChatMessage {
@@ -21,15 +27,14 @@ export interface ChatMessage {
 }
 
 export interface AppState {
+  meta: {
+    hydrated: boolean;
+  };
   auth: {
     isAuthenticated: boolean;
     rememberMe: boolean;
     token: string | null;
-    user: {
-      username: string;
-      email: string;
-      avatar: string;
-    } | null;
+    user: SessionUser | null;
   };
   settings: {
     cigarettePrice: number;
@@ -63,15 +68,14 @@ export interface AppState {
 }
 
 const defaultState: AppState = {
+  meta: {
+    hydrated: false,
+  },
   auth: {
     isAuthenticated: false,
     rememberMe: true,
     token: null,
-    user: {
-      username: "Vanessa Chaos",
-      email: "hello@lastpuff.app",
-      avatar: "V",
-    },
+    user: null,
   },
   settings: {
     cigarettePrice: 20,
@@ -133,6 +137,9 @@ function mergeState(partial: Partial<AppState>): AppState {
       ...partial.auth,
       user: partial.auth?.user ?? defaultState.auth.user,
     },
+    meta: {
+      hydrated: partial.meta?.hydrated ?? defaultState.meta.hydrated,
+    },
     settings: { ...defaultState.settings, ...partial.settings },
     stats: { ...defaultState.stats, ...partial.stats },
     social: {
@@ -149,7 +156,13 @@ function persist(nextState: AppState) {
     return;
   }
 
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(nextState));
+  window.localStorage.setItem(
+    STORAGE_KEY,
+    JSON.stringify({
+      social: nextState.social,
+      damage: nextState.damage,
+    }),
+  );
 }
 
 function hydrate() {
@@ -162,6 +175,21 @@ function hydrate() {
   if (persisted) {
     state = mergeState(persisted);
   }
+
+  const token = getStoredToken();
+  const user = getStoredUser();
+  state = {
+    ...state,
+    meta: {
+      hydrated: true,
+    },
+    auth: {
+      ...state.auth,
+      isAuthenticated: Boolean(token && user),
+      token,
+      user,
+    },
+  };
 
   hydrated = true;
   emit();
@@ -196,42 +224,64 @@ export function useAppStore<T>(selector: (value: AppState) => T): T {
 export const appStore = {
   hydrate,
   getState: () => state,
-  login(payload: { username: string; email: string; rememberMe: boolean; token?: string | null }) {
+  login(payload: { id?: number; username: string; email: string; rememberMe: boolean; token: string; cigarettePrice?: number; visibilityEnabled?: boolean }) {
+    const user: SessionUser = {
+      id: payload.id,
+      username: payload.username,
+      email: payload.email,
+      avatar: payload.username.slice(0, 1).toUpperCase(),
+      cigarettePrice: payload.cigarettePrice,
+      visibilityEnabled: payload.visibilityEnabled,
+    };
+    storeSession(payload.token, user);
     setState((current) => ({
       ...current,
+      meta: {
+        hydrated: true,
+      },
       auth: {
         isAuthenticated: true,
         rememberMe: payload.rememberMe,
-        token: payload.token ?? null,
-        user: {
-          username: payload.username,
-          email: payload.email,
-          avatar: payload.username.slice(0, 1).toUpperCase(),
-        },
-      },
-      stats: {
-        cigarettesToday: 0,
-        fakeQuits: 0,
-        lifetimeCigarettes: 0,
-        drinksToday: 0,
-        blockedBuys: 0,
-        drunkTexts: 0,
-        sleepDebtHours: 0,
-        exMessages: 0,
-        blockedShoppingAttempts: 0,
-        worstSleepNightHours: 0,
-        monthlyCigarettes: [0],
-        dailyCigarettes: [0],
+        token: payload.token,
+        user,
       },
     }));
   },
+  updateUser(user: Partial<NonNullable<AppState["auth"]["user"]>>) {
+    setState((current) => {
+      if (!current.auth.user) {
+        return current;
+      }
+
+      const nextUser = {
+        ...current.auth.user,
+        ...user,
+      };
+      if (current.auth.token) {
+        storeSession(current.auth.token, nextUser);
+      }
+
+      return {
+        ...current,
+        auth: {
+          ...current.auth,
+          user: nextUser,
+        },
+      };
+    });
+  },
   logout() {
+    clearSession();
     setState((current) => ({
       ...current,
+      meta: {
+        hydrated: true,
+      },
       auth: {
-        ...current.auth,
         isAuthenticated: false,
+        rememberMe: true,
         token: null,
+        user: null,
       },
     }));
   },

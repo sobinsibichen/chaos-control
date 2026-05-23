@@ -21,6 +21,7 @@ function formatTime(timestamp: number) {
 export function ChatModal({ open, user, messages, typing, onClose }: ChatModalProps) {
   const [draft, setDraft] = useState("");
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const isImageAvatar = user ? /^https?:\/\//.test(user.avatar) || user.avatar.startsWith("data:") || user.avatar.startsWith("/") : false;
 
   useEffect(() => {
     if (!scrollRef.current) {
@@ -66,13 +67,17 @@ export function ChatModal({ open, user, messages, typing, onClose }: ChatModalPr
                 <ArrowLeft className="h-4 w-4" />
               </button>
               <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-foreground font-bold text-primary-foreground shadow-sm">
-                {user.avatar}
+                {isImageAvatar ? (
+                  <img src={user.avatar} alt={user.username} className="h-full w-full rounded-2xl object-cover" />
+                ) : (
+                  user.avatar
+                )}
               </div>
               <div className="min-w-0 flex-1">
                 <div className="truncate font-bold">{user.username}</div>
                 <div className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground">
-                  <Circle className={`h-2.5 w-2.5 fill-current ${user.online ? "text-neon-green" : "text-neon-red"}`} />
-                  {user.online ? "Online" : "Off-grid for a second"}
+                  <Circle className={`h-2.5 w-2.5 fill-current ${user.online ? "text-neon-green" : user.onlineStatus === "RECENTLY ACTIVE" ? "text-amber-400" : "text-neon-red"}`} />
+                  {user.onlineStatus || (user.online ? "Online" : "Off-grid for a second")}
                 </div>
               </div>
             </div>

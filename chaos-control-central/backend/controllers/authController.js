@@ -5,6 +5,7 @@ const {
   findUserByEmail,
   findUserById,
 } = require("../models/userModel");
+const { ensureUserBootstrap } = require("../services/userDataService");
 
 const generateToken = (userId) =>
   jwt.sign({ id: userId }, process.env.JWT_SECRET, { expiresIn: "7d" });
@@ -13,6 +14,8 @@ const sanitizeUser = (user) => ({
   id: user.id,
   name: user.name,
   email: user.email,
+  cigarettePrice: Number(user.cigarette_price) || 20,
+  visibilityEnabled: Boolean(user.visibility_enabled),
 });
 
 const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -55,6 +58,7 @@ const signup = async (req, res) => {
       email: normalizedEmail,
       password: hashedPassword,
     });
+    await ensureUserBootstrap(user.id);
 
     const token = generateToken(user.id);
     console.log("User created successfully with id:", user.id);
@@ -115,6 +119,7 @@ const login = async (req, res) => {
     }
 
     const token = generateToken(user.id);
+    await ensureUserBootstrap(user.id);
 
     return res.status(200).json({
       success: true,
