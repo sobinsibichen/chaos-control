@@ -1,7 +1,20 @@
 import { appStore } from "@/lib/app-store";
 import { getStoredToken } from "@/lib/session";
 
-export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "http://localhost:5000").replace(/\/$/, "");
+function resolveApiBaseUrl() {
+  if (import.meta.env.VITE_API_BASE_URL) {
+    return import.meta.env.VITE_API_BASE_URL.replace(/\/$/, "");
+  }
+
+  if (typeof window !== "undefined") {
+    const { protocol, hostname } = window.location;
+    return `${protocol}//${hostname}:5000`;
+  }
+
+  return "http://localhost:5000";
+}
+
+export const API_BASE_URL = resolveApiBaseUrl();
 
 interface ApiRequestOptions extends RequestInit {
   auth?: boolean;

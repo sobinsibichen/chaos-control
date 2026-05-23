@@ -21,11 +21,33 @@ const app = express();
 const port = process.env.PORT || 5000;
 const server = http.createServer(app);
 
-app.use(cors());
+app.set("trust proxy", 1);
+app.use(
+  cors({
+    origin: process.env.CORS_ORIGIN || true,
+    credentials: true,
+  }),
+);
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+app.get("/", async (req, res, next) => {
+  try {
+    const result = await pool.query("SELECT NOW()");
+
+    res.status(200).json({
+      success: true,
+      message: "Backend connected successfully",
+      databaseTime: result.rows[0],
+    });
+  } catch (error) {
+    next(error);
+  }
+});
 
 app.get("/api/test", (req, res) => {
   res.status(200).json({
+    success: true,
     message: "Backend working",
   });
 });
@@ -72,5 +94,27 @@ const startServer = async () => {
     process.exit(1);
   }
 };
+
+const shutdown = async (signal) => {
+  console.log(`${signal} received. Shutting down gracefully...`);
+
+  server.close(async () => {
+    try {
+      await pool.end();
+      process.exit(0);
+    } catch (error) {
+      console.error("Error during shutdown:", error.message);
+      process.exit(1);
+    }
+  });
+};
+
+process.on("SIGINT", () => {
+  void shutdown("SIGINT");
+});
+
+process.on("SIGTERM", () => {
+  void shutdown("SIGTERM");
+});
 
 startServer();

@@ -108,6 +108,13 @@ async function ensureUserBootstrap(userId, db = pool) {
     "SELECT cigarette_price FROM public.users WHERE id = $1 LIMIT 1",
     [userId],
   );
+
+  if (!userResult.rows.length) {
+    const error = new Error("Session user was not found in the database. Please log in again.");
+    error.status = 401;
+    throw error;
+  }
+
   const cigarettePrice = toNumber(userResult.rows[0]?.cigarette_price, 20);
   const statsExists = await db.query("SELECT 1 FROM public.user_stats WHERE user_id = $1 LIMIT 1", [userId]);
 

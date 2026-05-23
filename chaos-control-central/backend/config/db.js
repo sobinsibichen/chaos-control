@@ -1,30 +1,29 @@
+const { Pool } = require("pg");
 require("dotenv").config();
 
-const { Pool } = require("pg");
-
-const requiredEnvVars = ["DB_USER", "DB_HOST", "DB_NAME", "DB_PASSWORD", "DB_PORT"];
-const missingEnvVars = requiredEnvVars.filter((key) => !process.env[key]);
-
-if (missingEnvVars.length > 0) {
-  console.error("Missing database environment variables:", missingEnvVars.join(", "));
+if (!process.env.DATABASE_URL) {
+  throw new Error("DATABASE_URL is not configured.");
 }
 
 const pool = new Pool({
-  user: process.env.DB_USER,
-  host: process.env.DB_HOST,
-  database: process.env.DB_NAME,
-  password: process.env.DB_PASSWORD,
-  port: Number(process.env.DB_PORT),
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false,
+  },
+  max: Number(process.env.DB_POOL_MAX || 10),
+  idleTimeoutMillis: Number(process.env.DB_IDLE_TIMEOUT_MS || 30000),
+  connectionTimeoutMillis: Number(process.env.DB_CONNECTION_TIMEOUT_MS || 10000),
+  allowExitOnIdle: true,
 });
 
-pool
-  .connect()
-  .then((client) => {
-    console.log(`PostgreSQL Connected (${process.env.DB_NAME})`);
-    client.release();
-  })
-  .catch((error) => {
-    console.error("PostgreSQL connection error:", error.message);
-  });
+pool.connect((err, client, release) => {
+  if (err) {
+    console.error("Database connection failed:", err.message);
+    return;
+  }
+
+  console.log("Supabase PostgreSQL connected successfully");
+  release();
+});
 
 module.exports = pool;
