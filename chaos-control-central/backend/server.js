@@ -86,6 +86,17 @@ const startServer = async () => {
 
     initializeRealtime(server);
 
+    server.once("error", (error) => {
+      if (error && error.code === "EADDRINUSE") {
+        console.error(`Port ${port} is already in use. Another backend instance is probably already running.`);
+        console.error(`If the app is already working, keep using it. Otherwise stop the old process and start again.`);
+        process.exit(1);
+      }
+
+      console.error("Unable to start server:", error.message);
+      process.exit(1);
+    });
+
     server.listen(port, () => {
       console.log(`Server running on port ${port}`);
     });

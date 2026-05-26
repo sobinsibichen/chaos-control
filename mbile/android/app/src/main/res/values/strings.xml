@@ -1,0 +1,9 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Last Puff</string>
+    <string name="title_activity_main">Last Puff</string>
+    <string name="package_name">com.lastpuff.mobile</string>
+    <string name="custom_url_scheme">com.lastpuff.mobile</string>
+    <string name="accessibility_service_description">Blocks selected apps after the scheduled time until you complete the unlock challenge.</string>
+    <string name="accessibility_service_summary">Last Puff app protection</string>
+</resources>
