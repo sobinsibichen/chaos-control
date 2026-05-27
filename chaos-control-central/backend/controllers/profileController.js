@@ -1,5 +1,5 @@
 const { asyncHandler, createError } = require("../utils/http");
-const { getProfileData, updateCigarettePrice, updateSmokingPreferences, getProfileAchievements } = require("../services/userDataService");
+const { getProfileData, updateCigarettePrice, updateSmokingPreferences, getProfileAchievements, generateFinalCertificate } = require("../services/userDataService");
 
 const getProfile = asyncHandler(async (req, res) => {
   const profile = await getProfileData(req.user.id);
@@ -54,9 +54,17 @@ const getAchievements = asyncHandler(async (req, res) => {
   });
 });
 
+const downloadFinalCertificate = asyncHandler(async (req, res) => {
+  const certificate = await generateFinalCertificate(req.user.id);
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `attachment; filename="${certificate.filename}"`);
+  res.status(200).send(certificate.pdfBuffer);
+});
+
 module.exports = {
   getProfile,
   setCigarettePrice,
   setPreferences,
   getAchievements,
+  downloadFinalCertificate,
 };

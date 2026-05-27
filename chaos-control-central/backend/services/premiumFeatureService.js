@@ -1,11 +1,11 @@
 const pool = require("../config/db");
 const { createError } = require("../utils/http");
-const { emitUserRefresh } = require("../socket/realtime");
 const {
   ensureUserBootstrap,
   getDashboardData,
   getRoastAnalytics,
   getRecentActivity,
+  emitUserRealtimeState,
 } = require("./userDataService");
 
 function toNumber(value, fallback = 0) {
@@ -180,7 +180,7 @@ async function createSmokeDnaRecord(userId, payload) {
   );
 
   await addFeatureActivity(userId, "smoke_dna_created", "Smoke DNA generated", `Smoking profile stored as ${dna.smokerType}.`);
-  emitUserRefresh(userId, { source: "smoke_dna_created" });
+  await emitUserRealtimeState(userId, { source: "smoke_dna_created" });
   return rows[0];
 }
 
@@ -254,7 +254,7 @@ async function updateSmokeDnaRecord(userId, id, payload) {
   );
 
   await addFeatureActivity(userId, "smoke_dna_updated", "Smoke DNA updated", `Smoke DNA record ${id} refreshed.`);
-  emitUserRefresh(userId, { source: "smoke_dna_updated" });
+  await emitUserRealtimeState(userId, { source: "smoke_dna_updated" });
   return rows[0];
 }
 
@@ -267,7 +267,7 @@ async function deleteSmokeDnaRecord(userId, id) {
     throw createError(404, "Smoke DNA record not found.");
   }
   await addFeatureActivity(userId, "smoke_dna_deleted", "Smoke DNA removed", `Smoke DNA record ${id} deleted.`);
-  emitUserRefresh(userId, { source: "smoke_dna_deleted" });
+  await emitUserRealtimeState(userId, { source: "smoke_dna_deleted" });
   return rows[0];
 }
 
@@ -414,7 +414,7 @@ async function upsertSmokeReplayRecord(userId, payload) {
   );
 
   await addFeatureActivity(userId, "smoke_replay_generated", "Smoke replay generated", `${replay.title} is ready.`);
-  emitUserRefresh(userId, { source: "smoke_replay_generated" });
+  await emitUserRealtimeState(userId, { source: "smoke_replay_generated" });
   return rows[0];
 }
 
@@ -508,7 +508,7 @@ async function createCravingPredictionRecord(userId, payload) {
   );
 
   await addFeatureActivity(userId, "craving_prediction_created", "Craving prediction generated", prediction.insightText);
-  emitUserRefresh(userId, { source: "craving_prediction_created" });
+  await emitUserRealtimeState(userId, { source: "craving_prediction_created" });
   return rows[0];
 }
 
@@ -554,7 +554,7 @@ async function createVoiceCommandRecord(userId, payload) {
       JSON.stringify(payload.metadata || {}),
     ],
   );
-  emitUserRefresh(userId, { source: "voice_command_created" });
+  await emitUserRealtimeState(userId, { source: "voice_command_created" });
   return rows[0];
 }
 
@@ -600,7 +600,7 @@ async function createScannerHistoryRecord(userId, payload) {
     ],
   );
   await addFeatureActivity(userId, "scanner_history_created", "Pack scanned", `Scanned ${payload.brand || payload.codeValue}.`);
-  emitUserRefresh(userId, { source: "scanner_history_created" });
+  await emitUserRealtimeState(userId, { source: "scanner_history_created" });
   return rows[0];
 }
 
@@ -642,7 +642,7 @@ async function createRitualSessionRecord(userId, payload) {
       JSON.stringify(payload.sessionData || {}),
     ],
   );
-  emitUserRefresh(userId, { source: "ritual_session_created" });
+  await emitUserRealtimeState(userId, { source: "ritual_session_created" });
   return rows[0];
 }
 
@@ -686,7 +686,7 @@ async function createEmergencySessionRecord(userId, payload) {
       JSON.stringify(payload.sessionData || {}),
     ],
   );
-  emitUserRefresh(userId, { source: "emergency_session_created" });
+  await emitUserRealtimeState(userId, { source: "emergency_session_created" });
   return rows[0];
 }
 
@@ -744,7 +744,7 @@ async function upsertFavoriteStoreRecord(userId, payload) {
       JSON.stringify(payload.metadata || {}),
     ],
   );
-  emitUserRefresh(userId, { source: "favorite_store_saved" });
+  await emitUserRealtimeState(userId, { source: "favorite_store_saved" });
   return rows[0];
 }
 
@@ -774,7 +774,7 @@ async function deleteFavoriteStoreRecord(userId, id) {
   if (!rows[0]) {
     throw createError(404, "Favorite store not found.");
   }
-  emitUserRefresh(userId, { source: "favorite_store_deleted" });
+  await emitUserRealtimeState(userId, { source: "favorite_store_deleted" });
   return rows[0];
 }
 

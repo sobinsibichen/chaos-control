@@ -2,7 +2,7 @@ const TOKEN_KEY = "token";
 const USER_KEY = "last-puff-user";
 
 export interface SessionUser {
-  id?: number;
+  id?: number | string;
   username: string;
   email: string;
   avatar: string;

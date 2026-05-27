@@ -17,6 +17,7 @@ const { listNearbyUsers, saveLocation } = require("./controllers/socialControlle
 const authMiddleware = require("./middleware/authMiddleware");
 const { ensureSchema } = require("./services/schemaService");
 const { initializeRealtime } = require("./socket/realtime");
+const { normalizeDatabaseError } = require("./utils/http");
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -73,11 +74,12 @@ app.use((req, res) => {
 });
 
 app.use((error, req, res, next) => {
-  console.error(error);
+  const normalized = normalizeDatabaseError(error);
+  console.error(normalized);
 
-  res.status(error.status || 500).json({
+  res.status(normalized.status || 500).json({
     success: false,
-    message: error.message || "Internal server error.",
+    message: normalized.status ? normalized.message : "Internal server error.",
   });
 });
 

@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "framer-motion";
-import { Brain, Cigarette, Flame, Search, ShieldCheck, Sparkles, TimerReset, TrendingDown, Trophy, Wind, Zap } from "lucide-react";
+import { Award, Brain, Cigarette, Flame, Mic, Radar, Search, ShieldCheck, Sparkles, TimerReset, TrendingDown, Trophy, Wind, Zap } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AIOrb } from "@/components/lp/AIOrb";
@@ -68,10 +68,37 @@ type DashboardResponse = { success: boolean } & DashboardPayload;
 
 interface ActivityRow {
   id: number;
+  activity_type: string;
   title: string;
   description: string;
   created_at: string;
 }
+
+const ACTIVITY_CACHE_KEY = "last-puff-recent-activity";
+
+const activityIconMap = {
+  cigarette_logged: Cigarette,
+  quit_started: TimerReset,
+  smoke_free_milestone: ShieldCheck,
+  achievement_unlocked: Trophy,
+  level_up: Award,
+  smoke_dna_updated: Brain,
+  smoke_dna_created: Brain,
+  radar_scan: Radar,
+  schedule_updated: ShieldCheck,
+  blocked_app_toggled: ShieldCheck,
+  blocked_apps_saved: ShieldCheck,
+  blocked_app_added: ShieldCheck,
+  voice_command_created: Mic,
+  streak_milestone: Flame,
+  recovery_milestone: Wind,
+  lung_recovery_milestone: Wind,
+  spending_saved_milestone: TrendingDown,
+  final_level_unlocked: Trophy,
+  final_reward: Award,
+  daily_goal_completed: Sparkles,
+  weekly_target_completed: Sparkles,
+} as const;
 
 function IndexRedirect() {
   const navigate = useNavigate();
@@ -104,6 +131,7 @@ export function DashboardPage() {
   const [quitStep, setQuitStep] = useState<0 | 1 | 2>(0);
   const [funnyMessage, setFunnyMessage] = useState(funnyMessages[0]);
   const [popup, setPopup] = useState<{ type: "level" | "final"; title: string; description: string } | null>(null);
+  const [cachedActivity, setCachedActivity] = useState<ActivityRow[]>([]);
   const previousLevelRef = useRef<number | null>(null);
 
   const dashboardQuery = useQuery({
@@ -114,9 +142,34 @@ export function DashboardPage() {
 
   const activityQuery = useQuery({
     queryKey: queryKeys.activity,
-    queryFn: () => apiRequest<{ success: boolean; activity: ActivityRow[] }>("/api/activity/recent?limit=6"),
+    queryFn: () => apiRequest<{ success: boolean; activity: ActivityRow[] }>("/api/activity/recent?limit=5"),
     refetchInterval: 60000,
   });
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    try {
+      const raw = window.localStorage.getItem(ACTIVITY_CACHE_KEY);
+      if (raw) {
+        setCachedActivity(JSON.parse(raw) as ActivityRow[]);
+      }
+    } catch {
+      setCachedActivity([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    const activity = activityQuery.data?.activity;
+    if (!activity?.length || typeof window === "undefined") {
+      return;
+    }
+    const latest = activity.slice(0, 5);
+    setCachedActivity(latest);
+    window.localStorage.setItem(ACTIVITY_CACHE_KEY, JSON.stringify(latest));
+  }, [activityQuery.data?.activity]);
 
   const dashboard = dashboardQuery.data;
   const smokeFreeSeconds = useSmokeFreeTicker(dashboard?.smokeFree.startedAt ?? null);
@@ -237,11 +290,23 @@ export function DashboardPage() {
   });
 
   const formatMoney = (value: number) => `Rs${Math.round(value).toLocaleString("en-IN")}`;
-  const formatTime = (value: string) =>
-    new Date(value).toLocaleTimeString("en-IN", {
+  const formatTime = (value: string) => {
+    const date = new Date(value);
+    const now = Date.now();
+    const diffMinutes = Math.max(0, Math.floor((now - date.getTime()) / 60000));
+    if (diffMinutes < 1) {
+      return "Just now";
+    }
+    if (diffMinutes < 60) {
+      return `${diffMinutes}m ago`;
+    }
+    return date.toLocaleString("en-IN", {
+      day: "2-digit",
+      month: "short",
       hour: "2-digit",
       minute: "2-digit",
     });
+  };
 
   const message =
     dashboard?.streak.current
@@ -250,7 +315,7 @@ export function DashboardPage() {
         ? "Every cigarette logged is a real datapoint. Recovery starts with honesty."
         : "Quiet day. Keep the streak gentle and alive.";
 
-  const activity = activityQuery.data?.activity ?? [];
+  const activity = (activityQuery.data?.activity?.length ? activityQuery.data.activity : cachedActivity).slice(0, 5);
 
   return (
     <AppShell>
@@ -405,21 +470,24 @@ export function DashboardPage() {
 
       <div className="mb-3 flex items-center justify-between">
         <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Recent Activity</div>
-        <span className="text-xs text-muted-foreground">Last 6 events</span>
+        <span className="text-xs text-muted-foreground">Last 5 events</span>
       </div>
       <div className="space-y-3">
         {(activity.length
           ? activity
-          : [{ id: 0, title: "No activity yet", description: "Your activity feed will appear here after your first actions.", created_at: new Date().toISOString() }]).map((row, index) => (
+          : [{ id: 0, activity_type: "empty", title: "No activity yet", description: "Your activity feed will appear here after your first actions.", created_at: new Date().toISOString() }]).map((row, index) => {
+          const Icon = activityIconMap[row.activity_type as keyof typeof activityIconMap] || Sparkles;
+          return (
           <motion.div
             key={row.id}
-            initial={{ opacity: 0, x: -10 }}
-            animate={{ opacity: 1, x: 0 }}
+            layout
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.4 + index * 0.08 }}
             className="glass flex items-center gap-3 rounded-2xl border border-foreground/10 p-4"
           >
-            <div className={`flex h-10 w-10 items-center justify-center rounded-lg bg-foreground/5 ${index % 3 === 0 ? "text-emerald-600" : index % 3 === 1 ? "text-amber-600" : "text-rose-600"}`}>
-              {index % 3 === 0 ? <Trophy className="h-4 w-4" /> : index % 3 === 1 ? <Cigarette className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}
+            <div className={`flex h-10 w-10 items-center justify-center rounded-lg bg-foreground/5 ${index === 0 ? "text-emerald-600" : index % 2 === 0 ? "text-amber-600" : "text-rose-600"}`}>
+              <Icon className="h-4 w-4" />
             </div>
             <div className="min-w-0 flex-1">
               <div className="truncate text-sm font-medium text-foreground">{row.title}</div>
@@ -427,7 +495,7 @@ export function DashboardPage() {
               <div className="mt-1 text-[10px] font-medium uppercase tracking-[0.15em] text-muted-foreground">{formatTime(row.created_at)}</div>
             </div>
           </motion.div>
-        ))}
+        )})}
       </div>
 
       <ViewportPortal>

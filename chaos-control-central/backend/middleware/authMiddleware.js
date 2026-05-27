@@ -1,4 +1,5 @@
 const jwt = require("jsonwebtoken");
+const { isValidUserId } = require("../utils/http");
 
 const authMiddleware = (req, res, next) => {
   const authHeader = req.headers.authorization;
@@ -14,6 +15,12 @@ const authMiddleware = (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    if (!isValidUserId(decoded?.id)) {
+      return res.status(401).json({
+        success: false,
+        message: "Your session is out of sync. Please log in again.",
+      });
+    }
     req.user = decoded;
     return next();
   } catch (error) {

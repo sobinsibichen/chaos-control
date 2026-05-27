@@ -224,7 +224,7 @@ export function useAppStore<T>(selector: (value: AppState) => T): T {
 export const appStore = {
   hydrate,
   getState: () => state,
-  login(payload: { id?: number; username: string; email: string; rememberMe: boolean; token: string; cigarettePrice?: number; visibilityEnabled?: boolean }) {
+  login(payload: { id?: number | string; username: string; email: string; rememberMe: boolean; token: string; cigarettePrice?: number; visibilityEnabled?: boolean }) {
     const user: SessionUser = {
       id: payload.id,
       username: payload.username,

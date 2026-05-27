@@ -1,5 +1,6 @@
 const pool = require("../config/db");
 const { emitUserRefresh, emitSocialEvent } = require("../socket/realtime");
+const { computeXp, unlockDynamicAchievements, ensureMilestone } = require("./achievementEngine");
 
 const legacyDefaultBlockedApps = [
   { appName: "Amazon", packageName: "com.amazon.mShop.android.shopping" },
@@ -225,6 +226,68 @@ async function ensureAchievementUnlocked(userId, title, db = pool) {
   return insertResult.rows.length > 0;
 }
 
+function generateVerificationCode(userId) {
+  return `LP-${String(userId).padStart(4, "0")}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+}
+
+function generateCertificateId(userId) {
+  return `LP-CERT-${userId}-${Date.now()}`;
+}
+
+function createPdfBuffer(lines) {
+  const width = 595;
+  const height = 842;
+  const content = [
+    "0.96 0.95 0.92 rg",
+    "0 0 595 842 re f",
+    "0.17 0.17 0.19 RG",
+    "1.2 w",
+    "36 36 523 770 re S",
+    "0.32 0.32 0.36 RG",
+    "0.8 w",
+    "54 748 m 541 748 l S",
+    "54 120 m 541 120 l S",
+  ];
+
+  for (const line of lines) {
+    const safeText = String(line.text).replace(/[()\\]/g, "\\$&");
+    content.push("BT");
+    content.push(`/F${line.font || 1} ${line.size || 12} Tf`);
+    content.push(`1 0 0 1 ${line.x || 72} ${line.y || 700} Tm`);
+    content.push(`(${safeText}) Tj`);
+    content.push("ET");
+  }
+
+  const objects = [];
+  const addObject = (body) => {
+    objects.push(body);
+  };
+
+  addObject("<< /Type /Catalog /Pages 2 0 R >>");
+  addObject("<< /Type /Pages /Count 1 /Kids [3 0 R] >>");
+  addObject(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${width} ${height}] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >>`);
+  addObject("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
+  addObject("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>");
+  addObject(`<< /Length ${Buffer.byteLength(content.join("\n"), "utf8")} >>\nstream\n${content.join("\n")}\nendstream`);
+
+  let offset = 0;
+  const parts = ["%PDF-1.4\n"];
+  offset = Buffer.byteLength(parts[0], "utf8");
+  const xref = ["xref", `0 ${objects.length + 1}`, "0000000000 65535 f "];
+
+  objects.forEach((object, index) => {
+    const objectString = `${index + 1} 0 obj\n${object}\nendobj\n`;
+    xref.push(`${String(offset).padStart(10, "0")} 00000 n `);
+    parts.push(objectString);
+    offset += Buffer.byteLength(objectString, "utf8");
+  });
+
+  const xrefOffset = offset;
+  const trailer = `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+  parts.push(`${xref.join("\n")}\n${trailer}`);
+  return Buffer.from(parts.join(""), "utf8");
+}
+
 async function buildSnapshot(userId, db = pool) {
   await ensureUserBootstrap(userId, db);
 
@@ -241,6 +304,7 @@ async function buildSnapshot(userId, db = pool) {
     monthlyResult,
     dailyResult,
     levelsResult,
+    insightsResult,
   ] = await Promise.all([
     db.query("SELECT id, name, email, created_at, cigarette_price, visibility_enabled FROM public.users WHERE id = $1", [userId]),
     db.query("SELECT * FROM public.user_stats WHERE user_id = $1 LIMIT 1", [userId]),
@@ -344,6 +408,21 @@ async function buildSnapshot(userId, db = pool) {
         ORDER BY required_points ASC, level_number ASC
       `,
     ),
+    db.query(
+      `
+        SELECT
+          (SELECT COUNT(*)::int FROM public.smoke_dna WHERE user_id = $1) AS smoke_dna_count,
+          (SELECT COUNT(*)::int FROM public.smoke_replay WHERE user_id = $1) AS replay_count,
+          (SELECT COUNT(*)::int FROM public.craving_predictions WHERE user_id = $1) AS craving_prediction_count,
+          (SELECT COUNT(*)::int FROM public.voice_commands WHERE user_id = $1) AS voice_command_count,
+          (SELECT COUNT(*)::int FROM public.scanner_history WHERE user_id = $1) AS scanner_history_count,
+          (SELECT COUNT(*)::int FROM public.activity_feed WHERE user_id = $1) AS activity_count,
+          (SELECT COUNT(*)::int FROM public.activity_feed WHERE user_id = $1 AND activity_type = 'radar_scan') AS radar_scan_count,
+          (SELECT COUNT(*)::int FROM public.activity_feed WHERE user_id = $1 AND activity_type IN ('schedule_updated', 'blocked_app_added', 'blocked_app_toggled', 'blocked_apps_saved')) AS control_update_count,
+          (SELECT COUNT(*)::int FROM public.favorite_stores WHERE user_id = $1) AS store_visit_count
+      `,
+      [userId],
+    ),
   ]);
 
   const user = userResult.rows[0];
@@ -361,43 +440,108 @@ async function buildSnapshot(userId, db = pool) {
   const dailyCigarettes = dailyResult.rows.map((row) => toNumber(row.total));
   const cigarettePrice = toNumber(statsRow?.price_per_cigarette, toNumber(user?.cigarette_price, 20));
   const dailySmokingAverage = Math.max(1, toNumber(statsRow?.daily_smoking_average, 10));
+  const trackingStartDate = new Date(user?.created_at || Date.now()).toISOString().slice(0, 10);
+  const avoidedResult = await db.query(
+    `
+      WITH day_series AS (
+        SELECT generate_series($2::date, CURRENT_DATE, interval '1 day')::date AS day_start
+      ),
+      daily_totals AS (
+        SELECT logged_at::date AS day_start, COALESCE(SUM(cigarettes_count), 0)::int AS total
+        FROM public.cigarette_logs
+        WHERE user_id = $1
+        GROUP BY logged_at::date
+      )
+      SELECT
+        COALESCE(SUM(GREATEST($3 - COALESCE(daily_totals.total, 0), 0)), 0)::int AS cumulative_avoided,
+        COALESCE(SUM(GREATEST(COALESCE(daily_totals.total, 0) - $3, 0)), 0)::int AS cumulative_over,
+        COALESCE(
+          SUM(
+            CASE
+              WHEN day_series.day_start >= CURRENT_DATE - interval '6 days'
+                THEN GREATEST($3 - COALESCE(daily_totals.total, 0), 0)
+              ELSE 0
+            END
+          ),
+          0
+        )::int AS weekly_avoided,
+        COALESCE(
+          SUM(
+            CASE
+              WHEN day_series.day_start >= CURRENT_DATE - interval '6 days'
+                THEN GREATEST(COALESCE(daily_totals.total, 0) - $3, 0)
+              ELSE 0
+            END
+          ),
+          0
+        )::int AS weekly_over
+      FROM day_series
+      LEFT JOIN daily_totals
+        ON daily_totals.day_start = day_series.day_start
+    `,
+    [userId, trackingStartDate, dailySmokingAverage],
+  );
   const smokeFreeStartedAt = statsRow?.smoke_free_started_at ? new Date(statsRow.smoke_free_started_at) : null;
   const smokeFreeSeconds = smokeFreeStartedAt ? Math.max(0, Math.floor((Date.now() - smokeFreeStartedAt.getTime()) / 1000)) : 0;
   const smokeFreeHours = smokeFreeSeconds / 3600;
-  const streakPoints = Math.floor(smokeFreeHours / 24) * 10;
-  const highestStreak = Math.max(toNumber(statsRow?.highest_streak), streakPoints);
+  const insightMetrics = insightsResult.rows[0] || {};
+  const currentStreak = Math.floor(smokeFreeHours / 24);
+  const highestStreak = Math.max(toNumber(statsRow?.highest_streak), Math.floor(longestQuitSeconds / 86400), currentStreak);
   const focusScore = clamp(Math.round(100 - todayCigarettes * 5 + smokeFreeHours * 0.5), 0, 100);
   const focusLevel = getFocusLevel(focusScore);
   const regretLevel = clamp(Math.round(todayCigarettes * 7 - smokeFreeHours * 0.2 + (todayCigarettes > 0 ? 12 : 0)), 0, 100);
-  const stabilityLevel = clamp(Math.round(100 - todayCigarettes * 4 + smokeFreeHours * 0.35 + streakPoints * 0.2), 0, 100);
+  const stabilityLevel = clamp(Math.round(100 - todayCigarettes * 4 + smokeFreeHours * 0.35 + currentStreak * 2), 0, 100);
   const cigarettesAvoidedToday = Math.max(dailySmokingAverage - todayCigarettes, 0);
-  const trackingDays = Math.max(
-    1,
-    Math.floor((Date.now() - new Date(user?.created_at || Date.now()).getTime()) / 86400000) + 1,
-  );
-  const trackedWeeklyDays = Math.min(trackingDays, 7);
-  const cigarettesAvoidedWeekly = Math.max(dailySmokingAverage * trackedWeeklyDays - weeklyCigarettes, 0);
-  const cigarettesAvoidedTotal = Math.max(dailySmokingAverage * trackingDays - totalCigarettes, 0);
+  const cigarettesOverBaselineToday = Math.max(todayCigarettes - dailySmokingAverage, 0);
+  const cigarettesAvoidedWeekly = toNumber(avoidedResult.rows[0]?.weekly_avoided);
+  const cigarettesAvoidedTotal = toNumber(avoidedResult.rows[0]?.cumulative_avoided);
+  const cigarettesOverBaselineWeekly = toNumber(avoidedResult.rows[0]?.weekly_over);
+  const cigarettesOverBaselineTotal = toNumber(avoidedResult.rows[0]?.cumulative_over);
   const todaySavings = cigarettesAvoidedToday * cigarettePrice;
   const weeklySavings = cigarettesAvoidedWeekly * cigarettePrice;
   const totalSavings = cigarettesAvoidedTotal * cigarettePrice;
   const reducedSmokingRatio = dailySmokingAverage > 0 ? cigarettesAvoidedToday / dailySmokingAverage : 1;
   const lungsRecoveryPercent = clamp(
-    Math.round(smokeFreeHours * 1.3 + streakPoints * 0.35 + reducedSmokingRatio * 20),
+    Math.round(smokeFreeHours * 1.3 + currentStreak * 3 + reducedSmokingRatio * 20),
     0,
     100,
   );
   const recoveryStage = getRecoveryStage(smokeFreeHours);
+  const smokeDnaCount = toNumber(insightMetrics.smoke_dna_count);
+  const replayCount = toNumber(insightMetrics.replay_count);
+  const cravingPredictionCount = toNumber(insightMetrics.craving_prediction_count);
+  const voiceCommandCount = toNumber(insightMetrics.voice_command_count);
+  const scannerHistoryCount = toNumber(insightMetrics.scanner_history_count);
+  const activityCount = toNumber(insightMetrics.activity_count);
+  const radarScanCount = toNumber(insightMetrics.radar_scan_count);
+  const controlUpdateCount = toNumber(insightMetrics.control_update_count);
+  const storeVisitCount = toNumber(insightMetrics.store_visit_count);
+  const xpPoints = computeXp({
+    totalCigarettes,
+    cigarettesAvoidedToday,
+    cigarettesAvoidedTotal,
+    cigarettesOverBaselineToday,
+    cigarettesOverBaselineTotal,
+    blockedBuys,
+    quitCount,
+    lungsRecoveryPercent,
+    smokeDnaCount,
+    replayCount,
+    cravingPredictionCount,
+    voiceCommandCount,
+    radarScanCount,
+    smokeFreeHours,
+  });
   const currentLevel =
     levels
-      .filter((level) => toNumber(level.required_points) <= streakPoints)
+      .filter((level) => toNumber(level.required_points) <= xpPoints)
       .slice(-1)[0] || levels[0] || { level_number: 1, level_name: "Starter", required_points: 0, reward_title: "One breath at a time" };
   const nextLevel =
-    levels.find((level) => toNumber(level.required_points) > streakPoints) || null;
+    levels.find((level) => toNumber(level.required_points) > xpPoints) || null;
   const currentLevelRequired = toNumber(currentLevel.required_points);
   const nextLevelRequired = toNumber(nextLevel?.required_points, currentLevelRequired);
   const levelProgressPercent = nextLevel
-    ? clamp(Math.round(((streakPoints - currentLevelRequired) / Math.max(1, nextLevelRequired - currentLevelRequired)) * 100), 0, 100)
+    ? clamp(Math.round(((xpPoints - currentLevelRequired) / Math.max(1, nextLevelRequired - currentLevelRequired)) * 100), 0, 100)
     : 100;
 
   return {
@@ -419,8 +563,9 @@ async function buildSnapshot(userId, db = pool) {
     smokeFreeStartedAt,
     smokeFreeSeconds,
     smokeFreeHours,
-    streakPoints,
+    currentStreak,
     highestStreak,
+    xpPoints,
     focusScore,
     focusLevel,
     regretLevel,
@@ -428,16 +573,29 @@ async function buildSnapshot(userId, db = pool) {
     cigarettesAvoidedToday,
     cigarettesAvoidedWeekly,
     cigarettesAvoidedTotal,
+    cigarettesOverBaselineToday,
+    cigarettesOverBaselineWeekly,
+    cigarettesOverBaselineTotal,
     todaySavings,
     weeklySavings,
     totalSavings,
     lungsRecoveryPercent,
     recoveryStage,
+    smokeDnaCount,
+    replayCount,
+    cravingPredictionCount,
+    voiceCommandCount,
+    scannerHistoryCount,
+    activityCount,
+    radarScanCount,
+    controlUpdateCount,
+    storeVisitCount,
     currentLevel,
+    currentLevelNumber: toNumber(currentLevel.level_number, 1),
     nextLevel,
     levelProgressPercent,
     longestQuitSeconds: Math.max(longestQuitSeconds, smokeFreeSeconds),
-    commitment: getCommitment(streakPoints),
+    commitment: getCommitment(xpPoints),
   };
 }
 
@@ -482,7 +640,7 @@ async function syncUserState(userId, db = pool) {
       snapshot.focusLevel,
       snapshot.regretLevel,
       snapshot.stabilityLevel,
-      snapshot.streakPoints,
+      snapshot.currentStreak,
       snapshot.highestStreak,
       toNumber(snapshot.currentLevel.level_number, 1),
       snapshot.smokeFreeStartedAt,
@@ -494,20 +652,20 @@ async function syncUserState(userId, db = pool) {
     ],
   );
 
-  if (snapshot.streakPoints >= 10 && previousHighestStreak < snapshot.streakPoints) {
+  if (snapshot.currentStreak >= 1 && previousHighestStreak < snapshot.currentStreak) {
     await addActivity(
       userId,
       "streak_progress",
       "Streak moved forward",
-      `${snapshot.streakPoints} streak points reached.`,
+      `${snapshot.currentStreak} smoke-free day${snapshot.currentStreak === 1 ? "" : "s"} reached.`,
       db,
     );
   }
 
-  if (snapshot.streakPoints !== previousStreak) {
+  if (snapshot.currentStreak !== previousStreak) {
     emitSocialEvent("streak-updated", {
       userId,
-      streak: snapshot.streakPoints,
+      streak: snapshot.currentStreak,
       highestStreak: snapshot.highestStreak,
     });
   }
@@ -527,6 +685,22 @@ async function syncUserState(userId, db = pool) {
       level: toNumber(snapshot.currentLevel.level_number, 1),
       title,
       description,
+    });
+  }
+
+  if (toNumber(snapshot.currentLevel.level_number, 1) < previousLevel) {
+    await addActivity(
+      userId,
+      "level_down",
+      `LEVEL ${previousLevel} LOST`,
+      `Your score dropped to level ${toNumber(snapshot.currentLevel.level_number, 1)}. Get back under your daily baseline to recover points.`,
+      db,
+    );
+    notifications.push({
+      type: "level_down",
+      title: `Level down to ${toNumber(snapshot.currentLevel.level_number, 1)}`,
+      description: "Smoking above your daily baseline removed points.",
+      level: toNumber(snapshot.currentLevel.level_number, 1),
     });
   }
 
@@ -574,7 +748,7 @@ function createDashboardPayload(snapshot, notifications = []) {
       seconds: snapshot.smokeFreeSeconds,
     },
     streak: {
-      current: snapshot.streakPoints,
+      current: snapshot.currentStreak,
       highest: snapshot.highestStreak,
     },
     level: {
@@ -660,7 +834,10 @@ async function logCigarette(userId, payload) {
     await client.query(
       `
         UPDATE public.user_stats
-        SET smoke_free_started_at = NULL, current_streak = 0, lungs_recovery_percent = 0
+        SET
+          smoke_free_started_at = NOW() + INTERVAL '5 minutes',
+          current_streak = 0,
+          lungs_recovery_percent = 0
         WHERE user_id = $1
       `,
       [userId],
@@ -671,7 +848,7 @@ async function logCigarette(userId, payload) {
     await ensureUserAchievements(userId, snapshot, client);
     await client.query("COMMIT");
 
-    emitUserRefresh(userId, { source: "cigarette_logged", notifications });
+    await emitUserRealtimeState(userId, { source: "cigarette_logged", notifications });
 
     return {
       message: "Cigarette recorded successfully.",
@@ -702,7 +879,7 @@ async function startQuitAttempt(userId) {
     await client.query(
       `
         UPDATE public.user_stats
-        SET smoke_free_started_at = NOW(), current_streak = 0
+        SET smoke_free_started_at = NULL, current_streak = 0
         WHERE user_id = $1
       `,
       [userId],
@@ -712,7 +889,7 @@ async function startQuitAttempt(userId) {
     await ensureUserAchievements(userId, snapshot, client);
     await client.query("COMMIT");
 
-    emitUserRefresh(userId, { source: "quit_started", notifications });
+    await emitUserRealtimeState(userId, { source: "quit_started", notifications });
 
     return {
       message: "Quit attempt started.",
@@ -727,31 +904,56 @@ async function startQuitAttempt(userId) {
 }
 
 async function ensureUserAchievements(userId, snapshot, db = pool) {
-  const unlockedTitles = [];
+  const unlockedAchievements = await unlockDynamicAchievements(userId, snapshot, db);
 
-  if (snapshot.totalCigarettes >= 1 && (await ensureAchievementUnlocked(userId, "First Log", db))) {
-    unlockedTitles.push("First Log");
-  }
-  if (snapshot.smokeFreeStartedAt && (await ensureAchievementUnlocked(userId, "Quit Try", db))) {
-    unlockedTitles.push("Quit Try");
-  }
-  if (snapshot.blockedBuys >= 1 && (await ensureAchievementUnlocked(userId, "Guardian", db))) {
-    unlockedTitles.push("Guardian");
-  }
-  if (snapshot.focusLevel === "HIGH" && (await ensureAchievementUnlocked(userId, "Focus Mode", db))) {
-    unlockedTitles.push("Focus Mode");
-  }
-  if (snapshot.totalCigarettes >= 25 && (await ensureAchievementUnlocked(userId, "Persistence", db))) {
-    unlockedTitles.push("Persistence");
+  const milestoneDefinitions = [
+    { key: "smoke-free-24h", condition: snapshot.smokeFreeHours >= 24, activityType: "smoke_free_milestone", title: "Smoke-free milestone reached", description: "24 hours smoke-free completed." },
+    { key: "smoke-free-week", condition: snapshot.smokeFreeHours >= 168, activityType: "streak_milestone", title: "Streak milestone reached", description: "1 week smoke-free secured." },
+    { key: "recovery-40", condition: snapshot.lungsRecoveryPercent >= 40, activityType: "recovery_milestone", title: "Recovery milestone reached", description: "Recovery metrics entered a stronger phase." },
+    { key: "lung-70", condition: snapshot.lungsRecoveryPercent >= 70, activityType: "lung_recovery_milestone", title: "Lung recovery milestone reached", description: "Lung recovery crossed 70%." },
+    { key: "daily-goal", condition: snapshot.cigarettesAvoidedToday >= 1, activityType: "daily_goal_completed", title: "Daily goal completed", description: "You stayed under your usual daily smoking average." },
+    { key: "weekly-target", condition: snapshot.cigarettesAvoidedWeekly >= 5, activityType: "weekly_target_completed", title: "Weekly target completed", description: "Weekly avoidance progress is now visible." },
+    { key: "spending-saved", condition: snapshot.totalSavings >= 1000, activityType: "spending_saved_milestone", title: "Spending saved milestone", description: `Saved Rs${Math.round(snapshot.totalSavings).toLocaleString("en-IN")} so far.` },
+    { key: "final-level", condition: snapshot.currentLevelNumber >= 15, activityType: "final_level_unlocked", title: "Final level unlocked", description: "Final Recovery has been unlocked." },
+  ];
+
+  for (const achievement of unlockedAchievements) {
+    await addActivity(userId, "achievement_unlocked", "Achievement unlocked", achievement.title, db);
   }
 
-  for (const title of unlockedTitles) {
-    await addActivity(userId, "achievement", "Achievement unlocked", title, db);
+  for (const milestone of milestoneDefinitions) {
+    if (!milestone.condition) {
+      continue;
+    }
+    const created = await ensureMilestone(userId, milestone.key, { currentLevel: snapshot.currentLevelNumber }, db);
+    if (created) {
+      await addActivity(userId, milestone.activityType, milestone.title, milestone.description, db);
+    }
+  }
+
+  if (snapshot.currentLevelNumber >= 15) {
+    const rewardUnlocked = await ensureMilestone(userId, "final-reward-unlocked", {
+      badge: "Freedom Badge",
+      certificate: true,
+    }, db);
+
+    if (rewardUnlocked) {
+      await db.query(
+        `
+          INSERT INTO public.user_rewards (user_id, reward_key, reward_name, reward_type, status, metadata, unlocked_at)
+          VALUES ($1, 'freedom-badge', 'Freedom Badge', 'badge', 'unlocked', $2::jsonb, NOW())
+          ON CONFLICT (user_id, reward_key)
+          DO NOTHING
+        `,
+        [userId, JSON.stringify({ theme: "premium-final-recovery" })],
+      );
+      await addActivity(userId, "final_reward", "Premium reward unlocked", "Freedom Badge and completion rewards are now available.", db);
+    }
   }
 }
 
-async function getRecentActivity(userId, limit = 5) {
-  const { rows } = await pool.query(
+async function getRecentActivity(userId, limit = 5, db = pool) {
+  const { rows } = await db.query(
     `
       SELECT id, activity_type, title, description, created_at
       FROM public.activity_feed
@@ -763,6 +965,14 @@ async function getRecentActivity(userId, limit = 5) {
   );
 
   return rows;
+}
+
+async function emitUserRealtimeState(userId, payload = {}) {
+  const recentActivity = await getRecentActivity(userId, 5);
+  emitUserRefresh(userId, {
+    ...payload,
+    recentActivity,
+  });
 }
 
 async function getAppsData(userId) {
@@ -815,7 +1025,7 @@ async function addBlockedApp(userId, payload) {
   );
 
   await addActivity(userId, "blocked_app_added", "Blocked app added", `${appName} added to protected apps.`);
-  emitUserRefresh(userId, { source: "blocked_app_added" });
+  await emitUserRealtimeState(userId, { source: "blocked_app_added" });
   return rows[0];
 }
 
@@ -881,7 +1091,7 @@ async function saveBlockedAppsSelection(userId, payload) {
 
     await addActivity(userId, "blocked_app_added", "Protected apps updated", `${apps.length} app${apps.length === 1 ? "" : "s"} selected.`, client);
     await client.query("COMMIT");
-    emitUserRefresh(userId, { source: "blocked_apps_saved" });
+    await emitUserRealtimeState(userId, { source: "blocked_apps_saved" });
     return getAppsData(userId);
   } catch (error) {
     await client.query("ROLLBACK");
@@ -910,7 +1120,7 @@ async function toggleBlockedApp(userId, payload) {
   }
 
   await addActivity(userId, "blocked_app_toggled", "Blocked app updated", `${app.app_name} is now ${isActive ? "active" : "inactive"}.`);
-  emitUserRefresh(userId, { source: "blocked_app_toggled" });
+  await emitUserRealtimeState(userId, { source: "blocked_app_toggled" });
   return app;
 }
 
@@ -926,7 +1136,7 @@ async function deleteBlockedApp(userId, appId) {
 
   if (rows[0]) {
     await addActivity(userId, "blocked_app_deleted", "Blocked app removed", `${rows[0].app_name} removed from protected apps.`);
-    emitUserRefresh(userId, { source: "blocked_app_deleted" });
+    await emitUserRealtimeState(userId, { source: "blocked_app_deleted" });
   }
 
   return rows[0] || null;
@@ -947,14 +1157,14 @@ async function saveBlockSchedule(userId, payload) {
   );
 
   await addActivity(userId, "schedule_updated", "Block schedule saved", `Daily block schedule updated to ${blockTime}.`);
-  emitUserRefresh(userId, { source: "schedule_updated" });
+  await emitUserRealtimeState(userId, { source: "schedule_updated" });
   return rows[0];
 }
 
 async function saveVerificationAttempt(userId, payload) {
   const passed = Boolean(payload.passed);
   await addActivity(userId, "verification", "Verification challenge completed", passed ? "Verification challenge passed." : "Verification challenge failed.");
-  emitUserRefresh(userId, { source: "verification" });
+  await emitUserRealtimeState(userId, { source: "verification" });
 
   return {
     passed,
@@ -994,7 +1204,7 @@ async function getRoastAnalytics(userId) {
     todaySavings: snapshot.todaySavings,
     weeklySavings: snapshot.weeklySavings,
     totalSavings: snapshot.totalSavings,
-    currentStreak: snapshot.streakPoints,
+    currentStreak: snapshot.currentStreak,
     lungsRecoveryPercent: snapshot.lungsRecoveryPercent,
     recoveryStage: snapshot.recoveryStage,
     cigarettesAvoidedTotal: snapshot.cigarettesAvoidedTotal,
@@ -1114,7 +1324,7 @@ async function updateVisibility(userId, enabled) {
     [userId, enabled, enabled ? "online" : "offline"],
   );
   await addActivity(userId, "visibility", "Radar visibility updated", enabled ? "Visibility enabled on radar." : "Visibility hidden from radar.");
-  emitUserRefresh(userId, { source: "visibility" });
+  await emitUserRealtimeState(userId, { source: "visibility" });
   emitSocialEvent(enabled ? "user-online" : "user-offline", {
     userId,
     isVisible: enabled,
@@ -1170,12 +1380,79 @@ async function runRadarScan(userId) {
   }
 
   await addActivity(userId, "radar_scan", "Radar scan completed", users.length ? `Found ${users.length} nearby user${users.length === 1 ? "" : "s"}.` : "No nearby visible users found.");
-  emitUserRefresh(userId, { source: "radar_scan" });
+  await emitUserRealtimeState(userId, { source: "radar_scan" });
   return users;
+}
+
+async function buildFinalRewardState(userId, snapshot, db = pool) {
+  const rewardsResult = await db.query(
+    `
+      SELECT reward_key, reward_name, reward_type, status, metadata, unlocked_at
+      FROM public.user_rewards
+      WHERE user_id = $1
+      ORDER BY unlocked_at DESC
+    `,
+    [userId],
+  );
+
+  const certificateResult = await db.query(
+    `
+      SELECT certificate_id, verification_code, created_at, metadata
+      FROM public.completion_certificates
+      WHERE user_id = $1
+      ORDER BY created_at DESC
+      LIMIT 1
+    `,
+    [userId],
+  );
+
+  const unlockedAchievements = await db.query(
+    `
+      SELECT COUNT(*)::int AS total
+      FROM public.user_achievements
+      WHERE user_id = $1
+    `,
+    [userId],
+  );
+
+  const isFinalLevel = snapshot.currentLevelNumber >= 15;
+  const badge = rewardsResult.rows.find((row) => row.reward_type === "badge") || null;
+  const certificate = certificateResult.rows[0] || null;
+
+  return {
+    isFinalLevel,
+    badge: badge
+      ? {
+          name: badge.reward_name,
+          status: badge.status,
+          unlockedAt: badge.unlocked_at,
+          metadata: badge.metadata || {},
+        }
+      : null,
+    certificate: certificate
+      ? {
+          certificateId: certificate.certificate_id,
+          verificationCode: certificate.verification_code,
+          createdAt: certificate.created_at,
+          metadata: certificate.metadata || {},
+        }
+      : null,
+    report: isFinalLevel
+      ? {
+          finalLevel: snapshot.currentLevelNumber,
+          smokeFreeHours: snapshot.smokeFreeHours,
+          totalCigarettesAvoided: snapshot.cigarettesAvoidedTotal,
+          totalMoneySaved: snapshot.totalSavings,
+          achievementsUnlocked: toNumber(unlockedAchievements.rows[0]?.total),
+        }
+      : null,
+  };
 }
 
 async function getProfileData(userId) {
   const { snapshot, notifications } = await syncUserState(userId);
+  await ensureUserAchievements(userId, snapshot);
+  const finalRewards = await buildFinalRewardState(userId, snapshot);
 
   return {
     user: {
@@ -1190,12 +1467,19 @@ async function getProfileData(userId) {
     level: toNumber(snapshot.currentLevel.level_number, 1),
     levelName: snapshot.currentLevel.level_name,
     rewardTitle: snapshot.currentLevel.reward_title,
-    currentLevelXp: snapshot.streakPoints,
-    xpToNextLevel: snapshot.nextLevel ? toNumber(snapshot.nextLevel.required_points) : snapshot.streakPoints,
+    currentLevelXp: snapshot.xpPoints,
+    xpToNextLevel: snapshot.nextLevel ? toNumber(snapshot.nextLevel.required_points) : snapshot.xpPoints,
     levelProgressPercent: snapshot.levelProgressPercent,
+    levelGuide: snapshot.levels.map((level) => ({
+      level: toNumber(level.level_number, 1),
+      name: level.level_name,
+      requiredPoints: toNumber(level.required_points),
+      rewardTitle: level.reward_title,
+      finalCertificate: toNumber(level.level_number, 1) >= 15,
+    })),
     commitment: snapshot.commitment,
     streak: {
-      current: snapshot.streakPoints,
+      current: snapshot.currentStreak,
       highest: snapshot.highestStreak,
     },
     smokeFree: {
@@ -1221,6 +1505,7 @@ async function getProfileData(userId) {
       blockedBuys: snapshot.blockedBuys,
       dailySmokingAverage: snapshot.dailySmokingAverage,
     },
+    finalRewards,
     notifications,
   };
 }
@@ -1243,7 +1528,7 @@ async function updateCigarettePrice(userId, price) {
     [userId, price],
   );
 
-  emitUserRefresh(userId, { source: "price_updated" });
+  await emitUserRealtimeState(userId, { source: "price_updated" });
   return getProfileData(userId);
 }
 
@@ -1267,37 +1552,123 @@ async function updateSmokingPreferences(userId, payload) {
     [userId, price, dailySmokingAverage],
   );
 
-  emitUserRefresh(userId, { source: "preferences_updated" });
+  await emitUserRealtimeState(userId, { source: "preferences_updated" });
   return getProfileData(userId);
 }
 
 async function getProfileAchievements(userId) {
   const { snapshot } = await syncUserState(userId);
   await ensureUserAchievements(userId, snapshot);
+  const visibleAchievementKeys = [
+    "baseline-broken",
+    "five-avoided",
+    "twenty-avoided",
+    "fifty-avoided",
+    "hundred-avoided",
+    "one-day-smoke-free",
+    "three-days-smoke-free",
+    "one-week-smoke-free",
+    "one-month-smoke-free",
+    "level-2",
+    "level-5",
+    "level-10",
+    "final-recovery-level",
+  ];
 
   const { rows } = await pool.query(
     `
       SELECT
         a.id,
+        a.achievement_key,
         a.title,
         a.description,
         a.icon,
         a.xp_reward,
         a.level_required,
+        a.category,
+        a.tier,
+        a.sort_order,
+        a.is_final_reward,
         ua.unlocked_at
       FROM public.achievements a
-      LEFT JOIN public.user_achievements ua
+      INNER JOIN public.user_achievements ua
         ON ua.achievement_id = a.id
        AND ua.user_id = $1
-      ORDER BY a.level_required NULLS LAST, a.id
+      WHERE a.achievement_key = ANY($2)
+      ORDER BY ua.unlocked_at DESC, a.sort_order ASC, a.id ASC
     `,
-    [userId],
+    [userId, visibleAchievementKeys],
   );
 
   return rows.map((row) => ({
     ...row,
-    unlocked: Boolean(row.unlocked_at),
+    unlocked: true,
   }));
+}
+
+async function generateFinalCertificate(userId) {
+  const profile = await getProfileData(userId);
+  if (!profile.finalRewards?.isFinalLevel) {
+    const error = new Error("Final level is required before generating a certificate.");
+    error.status = 400;
+    throw error;
+  }
+
+  const achievements = await getProfileAchievements(userId);
+  const unlockedCount = achievements.filter((achievement) => achievement.unlocked).length;
+  const certificateId = generateCertificateId(userId);
+  const verificationCode = generateVerificationCode(userId);
+  const completionDate = new Date().toLocaleDateString("en-IN", { year: "numeric", month: "long", day: "2-digit" });
+  const smokeFreeDays = Math.floor(profile.finalRewards.report.smokeFreeHours / 24);
+  const lines = [
+    { text: "LAST PUFF", x: 72, y: 792, font: 2, size: 24 },
+    { text: "Premium Recovery Certificate", x: 72, y: 764, font: 1, size: 13 },
+    { text: "Official recognition of sustained recovery progress", x: 72, y: 744, font: 1, size: 10 },
+    { text: "Certificate of Completion", x: 160, y: 680, font: 2, size: 28 },
+    { text: `Presented to ${profile.user.name}`, x: 150, y: 640, font: 2, size: 20 },
+    { text: `for reaching ${profile.levelName} and completing the Last Puff recovery journey.`, x: 92, y: 610, font: 1, size: 13 },
+    { text: `Final Level: ${profile.level}`, x: 92, y: 555, font: 2, size: 14 },
+    { text: `Smoke-Free Duration: ${smokeFreeDays} day(s)`, x: 92, y: 532, font: 1, size: 12 },
+    { text: `Total Cigarettes Avoided: ${profile.stats.totalCigarettesAvoided}`, x: 92, y: 510, font: 1, size: 12 },
+    { text: `Total Money Saved: Rs${Math.round(profile.savings.total).toLocaleString("en-IN")}`, x: 92, y: 488, font: 1, size: 12 },
+    { text: `Achievements Unlocked: ${unlockedCount}`, x: 92, y: 466, font: 1, size: 12 },
+    { text: "Your discipline, recovery metrics, and insight history now stand as a verified milestone.", x: 92, y: 418, font: 1, size: 12 },
+    { text: "This certificate recognizes a life-changing shift in health, control, and identity.", x: 92, y: 396, font: 1, size: 12 },
+    { text: "Authorized by Last Puff Recovery Systems", x: 92, y: 180, font: 2, size: 12 },
+    { text: `Certificate ID: ${certificateId}`, x: 92, y: 145, font: 1, size: 10 },
+    { text: `Verification Code: ${verificationCode}`, x: 280, y: 145, font: 1, size: 10 },
+    { text: `Completion Date: ${completionDate}`, x: 92, y: 128, font: 1, size: 10 },
+  ];
+
+  const pdfBuffer = createPdfBuffer(lines);
+  await pool.query(
+    `
+      INSERT INTO public.completion_certificates (user_id, certificate_id, verification_code, pdf_base64, metadata, created_at)
+      VALUES ($1, $2, $3, $4, $5::jsonb, NOW())
+      ON CONFLICT (certificate_id)
+      DO NOTHING
+    `,
+    [
+      userId,
+      certificateId,
+      verificationCode,
+      pdfBuffer.toString("base64"),
+      JSON.stringify({
+        level: profile.level,
+        levelName: profile.levelName,
+        smokeFreeHours: profile.finalRewards.report.smokeFreeHours,
+        totalCigarettesAvoided: profile.stats.totalCigarettesAvoided,
+        totalMoneySaved: profile.savings.total,
+      }),
+    ],
+  );
+
+  return {
+    filename: `last-puff-certificate-${certificateId}.pdf`,
+    pdfBuffer,
+    certificateId,
+    verificationCode,
+  };
 }
 
 module.exports = {
@@ -1323,4 +1694,6 @@ module.exports = {
   updateSmokingPreferences,
   getProfileAchievements,
   updateUserLocation,
+  generateFinalCertificate,
+  emitUserRealtimeState,
 };

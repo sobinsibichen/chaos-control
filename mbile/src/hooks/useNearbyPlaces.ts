@@ -170,8 +170,8 @@ export function useNearbyPlaces(ready: boolean) {
       mapsUrl: buildDirectionsUrl(store),
       rating: store.rating ?? null,
       isOpen: store.isOpen,
-      latitude: store.position.lat,
-      longitude: store.position.lng,
+      latitude: store.location.lat,
+      longitude: store.location.lng,
       metadata: {
         image: store.photoUrl,
         matchedKeyword: store.matchedKeyword,
@@ -197,8 +197,8 @@ export function useNearbyPlaces(ready: boolean) {
         mapsUrl: buildDirectionsUrl(store),
         rating: store.rating ?? null,
         isOpen: store.isOpen,
-        latitude: store.position.lat,
-        longitude: store.position.lng,
+        latitude: store.location.lat,
+        longitude: store.location.lng,
         metadata: {
           image: store.photoUrl,
           matchedKeyword: store.matchedKeyword,

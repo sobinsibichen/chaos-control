@@ -10,7 +10,7 @@ import {
 import { Toaster } from "react-hot-toast";
 
 import appCss from "../styles.css?url";
-import { LiveSync } from "@/lib/live-sync";
+import { RealtimeProvider } from "@/lib/realtime";
 
 function NotFoundComponent() {
   return (
@@ -127,8 +127,9 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <LiveSync />
-      <Outlet />
+      <RealtimeProvider>
+        <Outlet />
+      </RealtimeProvider>
     </QueryClientProvider>
   );
 }

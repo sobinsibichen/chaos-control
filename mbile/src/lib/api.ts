@@ -36,7 +36,7 @@ export interface ApiResponse<T> {
   message: string;
 }
 
-interface ApiRequestOptions extends Omit<AxiosRequestConfig, "url" | "data" | "headers"> {
+interface ApiRequestOptions extends Omit<AxiosRequestConfig, "url" | "data" | "headers" | "auth"> {
   auth?: boolean;
   body?: unknown;
   headers?: Record<string, string>;
@@ -71,13 +71,19 @@ apiClient.interceptors.request.use((config) => {
 apiClient.interceptors.response.use(
   (response) => response,
   (error: AxiosError<{ message?: string }>) => {
+    const backendMessage = error.response?.data?.message || error.message || "Request failed.";
+    const normalizedMessage =
+      /invalid input syntax for type uuid|invalid input syntax for type bigint|invalid input syntax for type integer/i.test(backendMessage)
+        ? "Your session or request data is out of sync. Please try again."
+        : backendMessage;
+
     if (error.response?.status === 401) {
       appStore.logout();
-      return Promise.reject(new Error(error.response.data?.message || "Your session has expired."));
+      return Promise.reject(new Error(normalizedMessage || "Your session has expired."));
     }
 
     return Promise.reject(
-      new Error(error.response?.data?.message || error.message || "Request failed."),
+      new Error(normalizedMessage),
     );
   },
 );

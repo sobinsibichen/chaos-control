@@ -22,7 +22,6 @@ import {
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AppShell } from "@/components/lp/AppShell";
-import { ControlEnhancements } from "@/components/lp/control/ControlEnhancements";
 import { GlassCard } from "@/components/lp/GlassCard";
 import { MentalStabilityChallenge } from "@/components/lp/damage/MentalStabilityChallenge";
 import { apiRequest } from "@/lib/api";
@@ -89,6 +88,7 @@ interface CatalogApp {
 }
 
 const fallbackAppIcon: keyof typeof iconMap = "LayoutGrid";
+const CONTROL_CACHE_KEY = "last-puff-control-cache";
 
 const halfHourOptions = Array.from({ length: 48 }, (_, index) => {
   const hour = String(Math.floor(index / 2)).padStart(2, "0");
@@ -161,6 +161,30 @@ function ControlPage() {
   const [nativeProtectionStatus, setNativeProtectionStatus] = useState<NativeProtectionStatus | null>(null);
   const hasLoadedRef = useRef(false);
   const installedAppsLoadedRef = useRef(false);
+  const lastScheduleSyncRef = useRef("");
+  const lastNativeSyncRef = useRef("");
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    try {
+      const raw = window.localStorage.getItem(CONTROL_CACHE_KEY);
+      if (!raw) {
+        return;
+      }
+      const parsed = JSON.parse(raw) as { apps?: AppItem[]; blockTime?: string };
+      if (parsed.apps?.length) {
+        setApps(parsed.apps);
+      }
+      if (parsed.blockTime) {
+        setBlockTime(parsed.blockTime);
+      }
+    } catch {
+      // Ignore stale cache and allow network bootstrap to refresh it.
+    }
+  }, []);
 
   useEffect(() => {
     const loadApps = async () => {
@@ -175,6 +199,15 @@ function ControlPage() {
         setApps(response.apps);
         if (response.schedule?.block_time) {
           setBlockTime(response.schedule.block_time.slice(0, 5));
+        }
+        if (typeof window !== "undefined") {
+          window.localStorage.setItem(
+            CONTROL_CACHE_KEY,
+            JSON.stringify({
+              apps: response.apps,
+              blockTime: response.schedule?.block_time?.slice(0, 5) ?? blockTime,
+            }),
+          );
         }
         if (isNativeAndroid()) {
           try {
@@ -202,6 +235,11 @@ function ControlPage() {
       return;
     }
 
+    const scheduleKey = `${blockTime}`;
+    if (lastScheduleSyncRef.current === scheduleKey) {
+      return;
+    }
+
     const timeout = window.setTimeout(async () => {
       try {
         setSavingSchedule(true);
@@ -209,6 +247,7 @@ function ControlPage() {
           method: "POST",
           body: JSON.stringify({ blockTime, frequency: "daily", enabled: true }),
         });
+        lastScheduleSyncRef.current = scheduleKey;
       } catch (error) {
         setErrorMessage(error instanceof Error ? error.message : "Unable to save schedule.");
       } finally {
@@ -224,6 +263,18 @@ function ControlPage() {
       return;
     }
 
+    const syncKey = JSON.stringify({
+      apps: apps.map((app) => ({
+        appName: app.app_name,
+        packageName: app.package_name || app.app_name,
+        isActive: app.is_active,
+      })),
+      blockTime,
+    });
+    if (lastNativeSyncRef.current === syncKey) {
+      return;
+    }
+
     const sync = async () => {
       try {
         const status = await syncNativeProtectionConfig({
@@ -236,6 +287,7 @@ function ControlPage() {
         });
 
         setNativeProtectionStatus(status);
+        lastNativeSyncRef.current = syncKey;
       } catch (error) {
         if (!isNativePluginUnavailable(error)) {
           throw error;
@@ -277,21 +329,41 @@ function ControlPage() {
     return merged.filter((item) => item.appName.toLowerCase().includes(search));
   }, [apps, deferredSearch, installedApps]);
 
-  const appsToRender = apps.map((item) => {
-    const catalogFallback = appCatalog.find(
-      (entry) =>
-        entry.packageName === item.package_name ||
-        entry.appName.toLowerCase() === item.app_name.toLowerCase(),
-    );
+  const appsToRender = useMemo(
+    () =>
+      apps.map((item) => {
+        const catalogFallback = appCatalog.find(
+          (entry) =>
+            entry.packageName === item.package_name ||
+            entry.appName.toLowerCase() === item.app_name.toLowerCase(),
+        );
 
-    return {
-      ...item,
-      app: item.app_name,
-      icon: iconMap[item.app_icon] || iconMap[catalogFallback?.appIcon || "ShieldAlert"],
-      why: item.warning_message || catalogFallback?.warningMessage || "Protected by Last Puff.",
-      isProtected: item.is_active,
-    };
-  });
+        return {
+          ...item,
+          app: item.app_name,
+          icon:
+            iconMap[item.app_icon as keyof typeof iconMap] ||
+            iconMap[(catalogFallback?.appIcon || "ShieldAlert") as keyof typeof iconMap],
+          why: item.warning_message || catalogFallback?.warningMessage || "Protected by Last Puff.",
+          isProtected: item.is_active,
+        };
+      }),
+    [apps],
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !apps.length) {
+      return;
+    }
+
+    window.localStorage.setItem(
+      CONTROL_CACHE_KEY,
+      JSON.stringify({
+        apps,
+        blockTime,
+      }),
+    );
+  }, [apps, blockTime]);
 
   const openPicker = () => {
     const loadInstalledApps = async () => {
@@ -455,8 +527,6 @@ function ControlPage() {
           </div>
         </GlassCard>
       ) : null}
-
-      <ControlEnhancements />
 
       <GlassCard className="mb-6">
         <div className="mb-5 flex items-center gap-3">

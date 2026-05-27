@@ -1,10 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { motion } from "framer-motion";
-import { Brain, Cigarette, Flame, IndianRupee, Settings, ShieldCheck, TimerReset, Trophy, Wind } from "lucide-react";
+import { Brain, Cigarette, Flame, IndianRupee, Settings, ShieldCheck, Sparkles, TimerReset, Trophy, Wind } from "lucide-react";
 import { useEffect, useState } from "react";
 import { AppShell } from "@/components/lp/AppShell";
 import { GlassCard } from "@/components/lp/GlassCard";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { apiRequest } from "@/lib/api";
 import { appStore, useAppStore } from "@/lib/app-store";
 import { logoutUser } from "@/lib/auth";
@@ -35,6 +36,7 @@ interface ProfilePayload {
   currentLevelXp: number;
   xpToNextLevel: number;
   levelProgressPercent: number;
+  levelGuide: { level: number; name: string; requiredPoints: number; rewardTitle: string; finalCertificate: boolean }[];
   commitment: string;
   streak: { current: number; highest: number };
   smokeFree: { startedAt: string | null; longestSeconds: number };
@@ -60,6 +62,7 @@ function Profile() {
   const [draftAverage, setDraftAverage] = useState("10");
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
+  const [pointsGuideOpen, setPointsGuideOpen] = useState(false);
 
   const profileQuery = useQuery({
     queryKey: queryKeys.profile,
@@ -69,8 +72,7 @@ function Profile() {
 
   const achievementsQuery = useQuery({
     queryKey: queryKeys.achievements,
-    queryFn: () =>
-      apiRequest<{ success: boolean; achievements: Achievement[] }>("/api/profile/achievements"),
+    queryFn: () => apiRequest<{ success: boolean; achievements: Achievement[] }>("/api/profile/achievements"),
     refetchInterval: 60000,
   });
 
@@ -131,6 +133,7 @@ function Profile() {
       void queryClient.invalidateQueries({ queryKey: queryKeys.profile });
       void queryClient.invalidateQueries({ queryKey: queryKeys.dashboard });
       void queryClient.invalidateQueries({ queryKey: queryKeys.analytics });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.achievements });
     },
     onError: (error) => {
       setSuccessMessage("");
@@ -167,10 +170,22 @@ function Profile() {
               {profile?.user.avatar ?? authUser?.avatar ?? "V"}
             </div>
           </motion.div>
-          <div>
+          <div className="min-w-0 flex-1">
             <div className="text-lg font-semibold text-foreground">{profile?.user.name ?? authUser?.username ?? "User"}</div>
             <div className="text-xs text-muted-foreground">{profile?.rewardTitle ?? "Tracking your recovery"}</div>
-            <div className="mt-1 text-[10px] font-medium text-primary">🔥 STREAK: {profile?.streak.current ?? 0}</div>
+            <div className="mt-1 text-[10px] font-medium uppercase tracking-[0.15em] text-primary">Streak: {profile?.streak.current ?? 0}</div>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <div className="inline-flex items-center gap-1 rounded-full border border-amber-400/20 bg-amber-400/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-amber-600">
+                <Sparkles className="h-3 w-3" />
+                {profile?.currentLevelXp ?? 0} Points
+              </div>
+              <button
+                onClick={() => setPointsGuideOpen(true)}
+                className="rounded-full border border-foreground/10 bg-card px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground transition-colors hover:border-foreground/20 hover:text-foreground"
+              >
+                View Points
+              </button>
+            </div>
           </div>
         </div>
 
@@ -191,6 +206,66 @@ function Profile() {
           </div>
         </div>
       </GlassCard>
+
+      <Dialog open={pointsGuideOpen} onOpenChange={setPointsGuideOpen}>
+        <DialogContent className="max-w-xl rounded-[1.75rem] border border-foreground/10 bg-[#fcfaf6] p-0 shadow-[0_24px_64px_rgba(15,23,42,0.18)]">
+          <div className="rounded-[1.75rem] bg-[radial-gradient(circle_at_top,_rgba(245,158,11,0.14),_transparent_55%),linear-gradient(180deg,#fffdf8_0%,#f7f1e7_100%)] p-6">
+            <DialogHeader className="pr-10 text-left">
+              <DialogTitle className="text-xl text-foreground">Points Structure</DialogTitle>
+              <DialogDescription className="text-sm text-muted-foreground">
+                Smoke less than your daily baseline to gain points. Smoke above it and points are removed. Reach the final level to unlock the certificate.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="mt-5 grid gap-3 rounded-[1.5rem] border border-foreground/10 bg-white/80 p-4 shadow-sm">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="text-sm font-semibold text-foreground">How points move</div>
+                  <div className="mt-1 text-xs text-muted-foreground">Each cigarette avoided below your baseline helps. Smoke-free hours add bonus momentum. Smoking above your baseline removes from your total score and can drop your level.</div>
+                </div>
+                <div className="rounded-2xl bg-amber-400/10 px-3 py-2 text-right text-[11px] font-semibold text-amber-700">
+                  + below baseline
+                  <br />
+                  + smoke-free time
+                  <br />
+                  - above baseline
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-5">
+              <div className="mb-3 text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Level Ladder</div>
+              <div className="grid max-h-[360px] gap-3 overflow-y-auto pr-1">
+                {(profile?.levelGuide ?? []).map((level) => {
+                  const isCurrent = level.level === profile?.level;
+
+                  return (
+                    <div
+                      key={level.level}
+                      className={`rounded-[1.4rem] border p-4 shadow-sm transition-colors ${isCurrent ? "border-amber-400/30 bg-amber-400/10" : "border-foreground/10 bg-white/85"}`}
+                    >
+                      <div className="flex items-center justify-between gap-4">
+                        <div>
+                          <div className="text-sm font-semibold text-foreground">
+                            Level {level.level} · {level.name}
+                          </div>
+                          <div className="mt-1 text-xs text-muted-foreground">{level.rewardTitle}</div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-sm font-semibold text-foreground">{level.requiredPoints} pts</div>
+                          <div className="mt-1 text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
+                            {level.finalCertificate ? "Certificate" : isCurrent ? "Current" : "Target"}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <div className="mb-6 grid grid-cols-2 gap-3">
         {[
@@ -331,28 +406,37 @@ function Profile() {
       <div className="mb-4">
         <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Your Achievements</div>
       </div>
-      <div className="mb-6 grid grid-cols-2 gap-3">
-        {achievements.map((badge, index) => {
-          const Icon = iconMap[badge.icon] || Trophy;
+      {achievements.length ? (
+        <div className="mb-6 grid grid-cols-2 gap-3">
+          {achievements.map((badge, index) => {
+            const Icon = iconMap[badge.icon] || Trophy;
 
-          return (
-            <motion.div
-              key={badge.id}
-              initial={{ opacity: 0, scale: 0.92 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: index * 0.05 }}
-              whileTap={{ scale: 0.96 }}
-              className="glass relative overflow-hidden rounded-2xl border border-foreground/10 p-3"
-            >
-              <div className={`mb-2 flex h-8 w-8 items-center justify-center rounded-lg bg-foreground/5 ${badge.unlocked ? "text-amber-400" : "text-muted-foreground"}`}>
-                <Icon className="h-4 w-4" />
-              </div>
-              <div className="text-sm font-semibold leading-tight text-foreground">{badge.title}</div>
-              <div className="mt-0.5 text-[10px] text-muted-foreground">{badge.description}</div>
-            </motion.div>
-          );
-        })}
-      </div>
+            return (
+              <motion.div
+                key={badge.id}
+                initial={{ opacity: 0, scale: 0.92 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: index * 0.05 }}
+                whileTap={{ scale: 0.96 }}
+                className="glass relative overflow-hidden rounded-2xl border border-foreground/10 p-3"
+              >
+                <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-lg bg-foreground/5 text-amber-400">
+                  <Icon className="h-4 w-4" />
+                </div>
+                <div className="text-sm font-semibold leading-tight text-foreground">{badge.title}</div>
+                <div className="mt-0.5 text-[10px] text-muted-foreground">{badge.description}</div>
+              </motion.div>
+            );
+          })}
+        </div>
+      ) : (
+        <GlassCard className="mb-6 border border-foreground/10">
+          <div className="text-sm font-semibold text-foreground">No achievements yet</div>
+          <div className="mt-1 text-xs text-muted-foreground">
+            Achievements will appear here when you smoke less than your daily baseline and level up from that progress.
+          </div>
+        </GlassCard>
+      )}
 
       <GlassCard className="border border-red-400/20 text-center">
         <div className="mb-2 text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Account</div>
