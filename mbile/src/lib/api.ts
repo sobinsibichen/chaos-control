@@ -2,8 +2,10 @@ import { appStore } from "@/lib/app-store";
 import { getStoredToken } from "@/lib/session";
 
 function resolveApiBaseUrl() {
-  if (import.meta.env.VITE_API_BASE_URL) {
-    return import.meta.env.VITE_API_BASE_URL.replace(/\/$/, "");
+  const envBaseUrl = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL;
+
+  if (envBaseUrl) {
+    return envBaseUrl.replace(/\/$/, "");
   }
 
   if (typeof window !== "undefined") {

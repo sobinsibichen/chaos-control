@@ -22,6 +22,7 @@ import {
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AppShell } from "@/components/lp/AppShell";
+import { ControlEnhancements } from "@/components/lp/control/ControlEnhancements";
 import { GlassCard } from "@/components/lp/GlassCard";
 import { MentalStabilityChallenge } from "@/components/lp/damage/MentalStabilityChallenge";
 import { apiRequest } from "@/lib/api";
@@ -137,6 +138,10 @@ function ViewportPortal({ children }: { children: React.ReactNode }) {
   return createPortal(children, document.body);
 }
 
+function isNativePluginUnavailable(error: unknown) {
+  return error instanceof Error && /not implemented|unavailable|does not have an implementation/i.test(error.message);
+}
+
 function ControlPage() {
   const unlockedApps = useAppStore((state) => state.damage.unlockedApps);
   const unlockFailures = useAppStore((state) => state.damage.unlockFailures);
@@ -172,8 +177,14 @@ function ControlPage() {
           setBlockTime(response.schedule.block_time.slice(0, 5));
         }
         if (isNativeAndroid()) {
-          const status = await getNativeProtectionStatus();
-          setNativeProtectionStatus(status);
+          try {
+            const status = await getNativeProtectionStatus();
+            setNativeProtectionStatus(status);
+          } catch (error) {
+            if (!isNativePluginUnavailable(error)) {
+              throw error;
+            }
+          }
         }
       } catch (error) {
         setErrorMessage(error instanceof Error ? error.message : "Unable to load app controls.");
@@ -214,16 +225,22 @@ function ControlPage() {
     }
 
     const sync = async () => {
-      const status = await syncNativeProtectionConfig({
-        apps: apps.map((app) => ({
-          appName: app.app_name,
-          packageName: app.package_name || app.app_name,
-          isActive: app.is_active,
-        })),
-        blockTime,
-      });
+      try {
+        const status = await syncNativeProtectionConfig({
+          apps: apps.map((app) => ({
+            appName: app.app_name,
+            packageName: app.package_name || app.app_name,
+            isActive: app.is_active,
+          })),
+          blockTime,
+        });
 
-      setNativeProtectionStatus(status);
+        setNativeProtectionStatus(status);
+      } catch (error) {
+        if (!isNativePluginUnavailable(error)) {
+          throw error;
+        }
+      }
     };
 
     void sync().catch((error: unknown) => {
@@ -234,7 +251,7 @@ function ControlPage() {
   const selectedAppsCount = apps.filter((item) => item.is_active).length;
 
   const pickerApps = useMemo(() => {
-    const sourceApps = installedApps.length ? installedApps : appCatalog;
+    const sourceApps = isNativeAndroid() ? installedApps : installedApps.length ? installedApps : appCatalog;
     const merged = sourceApps.map((catalogItem, index) => {
       const existing = apps.find(
         (app) =>
@@ -307,9 +324,11 @@ function ControlPage() {
     void loadInstalledApps()
       .catch((error: unknown) => {
         setErrorMessage(
-          error instanceof Error
-            ? error.message
-            : "Unable to read installed apps from this phone.",
+          isNativePluginUnavailable(error)
+            ? "Android app access will work after installing this updated APK."
+            : error instanceof Error
+              ? error.message
+              : "Unable to read installed apps from this phone.",
         );
       })
       .finally(() => {
@@ -327,7 +346,8 @@ function ControlPage() {
   };
 
   const saveSelectedApps = async () => {
-    const selectedApps = (installedApps.length ? installedApps : appCatalog).filter((item) =>
+    const sourceApps = isNativeAndroid() ? installedApps : installedApps.length ? installedApps : appCatalog;
+    const selectedApps = sourceApps.filter((item) =>
       draftSelectedPackages.includes(item.packageName || item.appName),
     );
 
@@ -386,7 +406,7 @@ function ControlPage() {
             <ShieldAlert className="h-6 w-6 text-rose-600" strokeWidth={2} />
           </div>
           <div className="flex-1">
-            <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Status</div>
+              <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Status</div>
             <div className="mt-1 text-lg font-semibold text-foreground">
               {unlockedApps ? "Protection Disabled" : selectedAppsCount ? "Protection Active" : "Protection Idle"}
             </div>
@@ -401,7 +421,7 @@ function ControlPage() {
         <GlassCard className="mb-6 border border-foreground/10">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Android Blocking Engine</div>
+              <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Android Protection</div>
               <div className="mt-1 text-lg font-semibold text-foreground">
                 {nativeProtectionStatus?.accessibilityEnabled ? "Accessibility enabled" : "Needs accessibility permission"}
               </div>
@@ -435,6 +455,8 @@ function ControlPage() {
           </div>
         </GlassCard>
       ) : null}
+
+      <ControlEnhancements />
 
       <GlassCard className="mb-6">
         <div className="mb-5 flex items-center gap-3">
@@ -731,30 +753,34 @@ function ControlPage() {
                               onClick={() => toggleDraftSelection(item)}
                               className={`flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-all ${
                                 selected
-                                  ? "border-foreground bg-foreground text-background"
-                                  : "border-foreground/10 bg-card text-foreground"
+                                  ? "border-black bg-white text-foreground"
+                                  : "border-foreground/10 bg-white text-foreground"
                               }`}
                             >
-                              <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${selected ? "bg-background/10" : "bg-foreground/5"}`}>
+                              <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${selected ? "bg-black/5" : "bg-foreground/5"}`}>
                                 <Icon className="h-4 w-4" />
                               </div>
                               <div className="min-w-0 flex-1">
                                 <div className="text-sm font-semibold">{item.appName}</div>
-                                <div className={`mt-1 text-[11px] ${selected ? "text-background/75" : "text-muted-foreground"}`}>
+                                <div className="mt-1 text-[11px] text-muted-foreground">
                                   {item.packageName}
                                 </div>
                               </div>
-                              <div className={`flex h-5 w-5 items-center justify-center rounded-md border ${selected ? "border-background bg-background text-foreground" : "border-foreground/10 bg-background"}`}>
-                                {selected ? "OK" : ""}
-                              </div>
+                              <div className={`h-5 w-5 rounded-full border ${selected ? "border-black bg-black" : "border-foreground/20 bg-white"}`} />
                             </motion.button>
                           );
                         })}
 
                     {!pickerLoading && !pickerApps.length ? (
                       <div className="rounded-2xl border border-dashed border-foreground/10 bg-card px-4 py-8 text-center">
-                        <div className="text-sm font-semibold text-foreground">No apps matched your search.</div>
-                        <div className="mt-1 text-xs text-muted-foreground">Try searching by app name instead.</div>
+                        <div className="text-sm font-semibold text-foreground">
+                          {isNativeAndroid() ? "No phone apps were loaded." : "No apps matched your search."}
+                        </div>
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          {isNativeAndroid()
+                            ? "Open the picker again after installing the updated APK."
+                            : "Try searching by app name instead."}
+                        </div>
                       </div>
                     ) : null}
                   </div>

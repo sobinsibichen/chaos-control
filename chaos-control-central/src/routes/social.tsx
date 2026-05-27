@@ -9,11 +9,13 @@ import { ChatModal } from "@/components/lp/social/ChatModal";
 import { NearbyUserCard } from "@/components/lp/social/NearbyUserCard";
 import { RadarScannerModal } from "@/components/lp/social/RadarScannerModal";
 import { fakeReplies } from "@/components/lp/social-data";
-import { API_BASE_URL, apiRequest } from "@/lib/api";
+import { API_URL, apiRequest } from "@/lib/api";
 import { appStore, type NearbySmoker, useAppStore } from "@/lib/app-store";
 import { ensureNativeLocationPermission, isNativeAndroid } from "@/lib/native/mobile";
+import { requireAuth } from "@/lib/route-guards";
 
 export const Route = createFileRoute("/social")({
+  beforeLoad: requireAuth,
   head: () => ({ meta: [{ title: "Smoker Radar - Last Puff" }] }),
   component: Social,
 });
@@ -187,7 +189,7 @@ function Social() {
       return undefined;
     }
 
-    const socket = io(API_BASE_URL, {
+    const socket = io(API_URL, {
       auth: { token },
       transports: ["websocket"],
     });

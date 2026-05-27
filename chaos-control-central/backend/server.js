@@ -12,6 +12,7 @@ const appsRoutes = require("./routes/appsRoutes");
 const analyticsRoutes = require("./routes/analyticsRoutes");
 const socialRoutes = require("./routes/socialRoutes");
 const profileRoutes = require("./routes/profileRoutes");
+const premiumFeaturesRoutes = require("./routes/premiumFeaturesRoutes");
 const { listNearbyUsers, saveLocation } = require("./controllers/socialController");
 const authMiddleware = require("./middleware/authMiddleware");
 const { ensureSchema } = require("./services/schemaService");
@@ -60,6 +61,7 @@ app.use("/api/apps", appsRoutes);
 app.use("/api/analytics", analyticsRoutes);
 app.use("/api/social", socialRoutes);
 app.use("/api/profile", profileRoutes);
+app.use("/api", premiumFeaturesRoutes);
 app.get("/api/nearby-users", authMiddleware, listNearbyUsers);
 app.post("/api/users/location", authMiddleware, saveLocation);
 

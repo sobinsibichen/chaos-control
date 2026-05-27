@@ -7,10 +7,13 @@ import { AppShell } from "@/components/lp/AppShell";
 import { GlassCard } from "@/components/lp/GlassCard";
 import { apiRequest } from "@/lib/api";
 import { appStore, useAppStore } from "@/lib/app-store";
+import { logoutUser } from "@/lib/auth";
 import { queryKeys } from "@/lib/query-keys";
+import { requireAuth } from "@/lib/route-guards";
 import { formatLongDuration, formatSmokeFree, useSmokeFreeTicker } from "@/lib/time";
 
 export const Route = createFileRoute("/profile")({
+  beforeLoad: requireAuth,
   head: () => ({ meta: [{ title: "Profile - Last Puff" }] }),
   component: Profile,
 });
@@ -136,7 +139,7 @@ function Profile() {
   });
 
   const handleLogout = () => {
-    appStore.logout();
+    void logoutUser();
   };
 
   const formatMoney = (value: number) => `Rs${Math.round(value).toLocaleString("en-IN")}`;

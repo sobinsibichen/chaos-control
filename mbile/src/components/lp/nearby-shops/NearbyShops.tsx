@@ -1,0 +1,245 @@
+import { useMemo } from "react";
+import { useJsApiLoader } from "@react-google-maps/api";
+import { motion } from "framer-motion";
+import { FiClock, FiMapPin, FiSearch } from "react-icons/fi";
+import { AppShell } from "@/components/lp/AppShell";
+import { GoogleMapView } from "@/components/lp/nearby-shops/GoogleMapView";
+import { ShopCard } from "@/components/lp/nearby-shops/ShopCard";
+import { useNearbyPlaces } from "@/hooks/useNearbyPlaces";
+
+const libraries: "places"[] = ["places"];
+
+const suggestions = [
+  "Smoke shops near me",
+  "Open tea shops",
+  "Convenience stores",
+  "24/7 shops",
+  "Cafes nearby",
+];
+
+function LoadingCard() {
+  return (
+    <div className="animate-pulse overflow-hidden rounded-[2rem] border border-black/5 bg-white shadow-[0_20px_44px_rgba(15,23,42,0.05)]">
+      <div className="h-40 bg-slate-200" />
+      <div className="space-y-3 p-5">
+        <div className="h-5 w-1/2 rounded bg-slate-200" />
+        <div className="h-4 w-4/5 rounded bg-slate-200" />
+        <div className="h-4 w-1/3 rounded bg-slate-200" />
+        <div className="grid grid-cols-3 gap-2 pt-2">
+          <div className="h-11 rounded-2xl bg-slate-200" />
+          <div className="h-11 rounded-2xl bg-slate-200" />
+          <div className="h-11 rounded-2xl bg-slate-200" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function NearbyShops() {
+  const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+  const { isLoaded, loadError } = useJsApiLoader({
+    id: "last-puff-nearby-stores-map",
+    googleMapsApiKey: apiKey ?? "",
+    libraries,
+  });
+
+  const {
+    searchTerm,
+    setSearchTerm,
+    location,
+    stores,
+    selectedStoreId,
+    setSelectedStoreId,
+    favoriteIds,
+    toggleFavorite,
+    locating,
+    loading,
+    error,
+    locate,
+  } = useNearbyPlaces(Boolean(apiKey) && isLoaded);
+
+  const selectedStore = useMemo(
+    () => stores.find((store) => store.placeId === selectedStoreId) ?? null,
+    [selectedStoreId, stores],
+  );
+
+  return (
+    <AppShell>
+      <div className="space-y-6">
+        <section className="relative overflow-hidden rounded-[2.4rem] border border-black/5 bg-[radial-gradient(circle_at_top_left,#fff7ed,transparent_42%),linear-gradient(180deg,#ffffff,#f8fafc)] p-6 shadow-[0_24px_60px_rgba(15,23,42,0.08)]">
+          <div className="absolute right-0 top-0 h-36 w-36 rounded-full bg-amber-200/35 blur-3xl" />
+          <div className="absolute -bottom-10 left-8 h-32 w-32 rounded-full bg-sky-200/30 blur-3xl" />
+          <div className="relative">
+            <div className="text-[11px] font-medium uppercase tracking-[0.18em] text-slate-500">Nearby Stores</div>
+            <h1 className="mt-2 font-serif text-3xl font-semibold tracking-tight text-slate-900">
+              Smart nearby store finder
+            </h1>
+            <p className="mt-2 max-w-sm text-sm leading-6 text-slate-600">
+              Search live nearby places around your current location with real map results, store details, favorites, and quick actions.
+            </p>
+
+            <div className="mt-5 rounded-[1.8rem] border border-white/60 bg-white/80 p-3 shadow-[0_20px_50px_rgba(15,23,42,0.08)] backdrop-blur">
+              <div className="flex items-center gap-3 rounded-[1.2rem] bg-slate-50 px-4 py-3">
+                <FiSearch className="h-4 w-4 text-slate-500" />
+                <input
+                  value={searchTerm}
+                  onChange={(event) => setSearchTerm(event.target.value)}
+                  placeholder="Search nearby stores"
+                  className="w-full bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400"
+                />
+              </div>
+              <div className="mt-3 flex snap-x gap-2 overflow-x-auto pb-1">
+                {suggestions.map((suggestion) => (
+                  <button
+                    key={suggestion}
+                    onClick={() => setSearchTerm(suggestion)}
+                    className="snap-start whitespace-nowrap rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-900 hover:text-slate-900"
+                  >
+                    {suggestion}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="rounded-[1.8rem] border border-black/5 bg-white p-4 shadow-[0_16px_34px_rgba(15,23,42,0.06)]">
+            <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">Status</div>
+            <div className="mt-2 text-lg font-semibold text-slate-900">
+              {locating ? "Locating..." : location ? "Live location active" : "Waiting for location"}
+            </div>
+          </div>
+          <div className="rounded-[1.8rem] border border-black/5 bg-white p-4 shadow-[0_16px_34px_rgba(15,23,42,0.06)]">
+            <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">Results</div>
+            <div className="mt-2 text-lg font-semibold text-slate-900">{stores.length} stores found</div>
+          </div>
+          <div className="rounded-[1.8rem] border border-black/5 bg-white p-4 shadow-[0_16px_34px_rgba(15,23,42,0.06)]">
+            <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">Saved</div>
+            <div className="mt-2 text-lg font-semibold text-slate-900">{favoriteIds.size} favorites</div>
+          </div>
+        </div>
+
+        {!apiKey ? (
+          <div className="rounded-[2rem] border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900">
+            Add `VITE_GOOGLE_MAPS_API_KEY` to your environment to use Nearby Stores.
+          </div>
+        ) : null}
+
+        {loadError ? (
+          <div className="rounded-[2rem] border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-700">
+            Google Maps failed to load. Check that your API key has Maps JavaScript API and Places API enabled.
+          </div>
+        ) : null}
+
+        {error ? (
+          <div className="rounded-[2rem] border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-700">
+            {error}
+          </div>
+        ) : null}
+
+        <section className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">Live Map</div>
+              <div className="mt-1 text-xl font-semibold text-slate-900">Explore nearby places</div>
+            </div>
+            <button
+              onClick={() => void locate().catch(() => {})}
+              className="rounded-full bg-slate-900 px-4 py-3 text-xs font-semibold text-white shadow-[0_16px_34px_rgba(15,23,42,0.16)]"
+            >
+              Refresh Location
+            </button>
+          </div>
+
+          {isLoaded ? (
+            <GoogleMapView
+              currentLocation={location}
+              stores={stores}
+              selectedStoreId={selectedStoreId}
+              onSelectStore={setSelectedStoreId}
+              onLocateMe={() => void locate().catch(() => {})}
+            />
+          ) : (
+            <div className="flex h-[24rem] items-center justify-center rounded-[2rem] border border-black/5 bg-white shadow-[0_28px_60px_rgba(15,23,42,0.08)]">
+              <div className="space-y-3 text-center">
+                <div className="mx-auto h-12 w-12 animate-spin rounded-full border-4 border-slate-200 border-t-slate-900" />
+                <div className="text-sm font-medium text-slate-600">Loading interactive map...</div>
+              </div>
+            </div>
+          )}
+        </section>
+
+        <section className="space-y-4">
+          <div className="flex items-end justify-between gap-3">
+            <div>
+              <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">Nearby Results</div>
+              <div className="mt-1 text-xl font-semibold text-slate-900">
+                {selectedStore ? selectedStore.name : "Available stores near you"}
+              </div>
+            </div>
+            {selectedStore ? (
+              <div className="rounded-full bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700">
+                {selectedStore.matchedKeyword}
+              </div>
+            ) : null}
+          </div>
+
+          {loading ? (
+            <div className="space-y-4">
+              {Array.from({ length: 3 }).map((_, index) => (
+                <LoadingCard key={index} />
+              ))}
+            </div>
+          ) : stores.length ? (
+            <div className="space-y-4">
+              {stores.map((store, index) => (
+                <motion.div
+                  key={store.placeId}
+                  initial={{ opacity: 0, y: 16 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: index * 0.04 }}
+                >
+                  <ShopCard
+                    store={store}
+                    favorite={favoriteIds.has(store.placeId)}
+                    selected={selectedStoreId === store.placeId}
+                    onToggleFavorite={toggleFavorite}
+                    onSelect={setSelectedStoreId}
+                  />
+                </motion.div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-[2rem] border border-dashed border-black/10 bg-white px-5 py-10 text-center shadow-[0_18px_36px_rgba(15,23,42,0.05)]">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-slate-100 text-slate-700">
+                <FiMapPin className="h-5 w-5" />
+              </div>
+              <div className="mt-4 text-lg font-semibold text-slate-900">No nearby stores found</div>
+              <p className="mt-2 text-sm leading-6 text-slate-500">
+                Try a different search like "Cafes nearby" or refresh your location.
+              </p>
+            </div>
+          )}
+        </section>
+
+        <section className="rounded-[2rem] border border-black/5 bg-white p-5 shadow-[0_18px_36px_rgba(15,23,42,0.05)]">
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
+              <FiClock className="h-5 w-5" />
+            </div>
+            <div>
+              <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">Smart Search</div>
+              <div className="mt-1 text-sm font-semibold text-slate-900">
+                Queries expand automatically for better nearby results
+              </div>
+            </div>
+          </div>
+          <p className="mt-3 text-sm leading-6 text-slate-600">
+            Searches like "Smoke shops near me" also check related nearby categories such as tobacco stores, vape shops, and convenience stores to improve live results.
+          </p>
+        </section>
+      </div>
+    </AppShell>
+  );
+}

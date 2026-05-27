@@ -14,6 +14,7 @@ import { Route as SignupRouteImport } from './routes/signup'
 import { Route as RoastRouteImport } from './routes/roast'
 import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as IntelligenceRouteImport } from './routes/intelligence'
 import { Route as HomeRouteImport } from './routes/home'
 import { Route as DamageRouteImport } from './routes/damage'
 import { Route as ControlRouteImport } from './routes/control'
@@ -43,6 +44,11 @@ const ProfileRoute = ProfileRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const IntelligenceRoute = IntelligenceRouteImport.update({
+  id: '/intelligence',
+  path: '/intelligence',
   getParentRoute: () => rootRouteImport,
 } as any)
 const HomeRoute = HomeRouteImport.update({
@@ -77,6 +83,7 @@ export interface FileRoutesByFullPath {
   '/control': typeof ControlRoute
   '/damage': typeof DamageRoute
   '/home': typeof HomeRoute
+  '/intelligence': typeof IntelligenceRoute
   '/login': typeof LoginRoute
   '/profile': typeof ProfileRoute
   '/roast': typeof RoastRoute
@@ -89,6 +96,7 @@ export interface FileRoutesByTo {
   '/control': typeof ControlRoute
   '/damage': typeof DamageRoute
   '/home': typeof HomeRoute
+  '/intelligence': typeof IntelligenceRoute
   '/login': typeof LoginRoute
   '/profile': typeof ProfileRoute
   '/roast': typeof RoastRoute
@@ -102,6 +110,7 @@ export interface FileRoutesById {
   '/control': typeof ControlRoute
   '/damage': typeof DamageRoute
   '/home': typeof HomeRoute
+  '/intelligence': typeof IntelligenceRoute
   '/login': typeof LoginRoute
   '/profile': typeof ProfileRoute
   '/roast': typeof RoastRoute
@@ -116,6 +125,7 @@ export interface FileRouteTypes {
     | '/control'
     | '/damage'
     | '/home'
+    | '/intelligence'
     | '/login'
     | '/profile'
     | '/roast'
@@ -128,6 +138,7 @@ export interface FileRouteTypes {
     | '/control'
     | '/damage'
     | '/home'
+    | '/intelligence'
     | '/login'
     | '/profile'
     | '/roast'
@@ -140,6 +151,7 @@ export interface FileRouteTypes {
     | '/control'
     | '/damage'
     | '/home'
+    | '/intelligence'
     | '/login'
     | '/profile'
     | '/roast'
@@ -153,6 +165,7 @@ export interface RootRouteChildren {
   ControlRoute: typeof ControlRoute
   DamageRoute: typeof DamageRoute
   HomeRoute: typeof HomeRoute
+  IntelligenceRoute: typeof IntelligenceRoute
   LoginRoute: typeof LoginRoute
   ProfileRoute: typeof ProfileRoute
   RoastRoute: typeof RoastRoute
@@ -195,6 +208,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/intelligence': {
+      id: '/intelligence'
+      path: '/intelligence'
+      fullPath: '/intelligence'
+      preLoaderRoute: typeof IntelligenceRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/home': {
@@ -241,6 +261,7 @@ const rootRouteChildren: RootRouteChildren = {
   ControlRoute: ControlRoute,
   DamageRoute: DamageRoute,
   HomeRoute: HomeRoute,
+  IntelligenceRoute: IntelligenceRoute,
   LoginRoute: LoginRoute,
   ProfileRoute: ProfileRoute,
   RoastRoute: RoastRoute,

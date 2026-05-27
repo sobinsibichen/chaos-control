@@ -1,56 +1,86 @@
+import axios, { AxiosError, type AxiosRequestConfig, type InternalAxiosRequestConfig } from "axios";
+import { API_BASE_URL, API_URL } from "@/config/api";
 import { appStore } from "@/lib/app-store";
 import { getStoredToken } from "@/lib/session";
 
-function resolveApiBaseUrl() {
-  if (import.meta.env.VITE_API_BASE_URL) {
-    return import.meta.env.VITE_API_BASE_URL.replace(/\/$/, "");
-  }
+export { API_BASE_URL, API_URL };
 
-  if (typeof window !== "undefined") {
-    const { protocol, hostname } = window.location;
-    return `${protocol}//${hostname}:5000`;
-  }
+export class ApiError extends Error {
+  status?: number;
+  code?: string;
+  isNetworkError: boolean;
 
-  return "http://localhost:5000";
+  constructor(message: string, options: { status?: number; code?: string; isNetworkError?: boolean } = {}) {
+    super(message);
+    this.name = "ApiError";
+    this.status = options.status;
+    this.code = options.code;
+    this.isNetworkError = options.isNetworkError ?? false;
+  }
 }
 
-export const API_BASE_URL = resolveApiBaseUrl();
+type ApiRequestOptions = Omit<AxiosRequestConfig, "url" | "baseURL"> & {
+  requiresAuth?: boolean;
+};
 
-interface ApiRequestOptions extends RequestInit {
-  auth?: boolean;
-}
+type ApiInternalConfig = InternalAxiosRequestConfig & {
+  requiresAuth?: boolean;
+};
+
+const apiClient = axios.create({
+  baseURL: API_BASE_URL,
+  timeout: 15000,
+  headers: {
+    "Content-Type": "application/json",
+  },
+});
+
+apiClient.interceptors.request.use((config: ApiInternalConfig) => {
+  const shouldAttachAuth = config.requiresAuth !== false;
+  const token = shouldAttachAuth ? getStoredToken() : null;
+
+  if (token) {
+    config.headers.set("Authorization", `Bearer ${token}`);
+  } else {
+    config.headers.delete("Authorization");
+  }
+
+  return config;
+});
+
+apiClient.interceptors.response.use(
+  (response) => response,
+  (error: AxiosError<{ message?: string; code?: string }>) => {
+    if (error.response?.status === 401) {
+      appStore.logout();
+    }
+
+    const message =
+      error.response?.data?.message ||
+      (error.code === "ECONNABORTED"
+        ? "The server took too long to respond. Please try again."
+        : !error.response
+          ? "Network error. Please check your internet connection."
+          : error.response.status >= 500
+            ? "Server error. Please try again shortly."
+            : "Request failed.");
+
+    throw new ApiError(message, {
+      status: error.response?.status,
+      code: error.code || error.response?.data?.code,
+      isNetworkError: !error.response,
+    });
+  },
+);
 
 export async function apiRequest<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
-  const { auth = true, headers, ...rest } = options;
-  const nextHeaders = new Headers(headers);
-
-  if (!nextHeaders.has("Content-Type") && rest.body) {
-    nextHeaders.set("Content-Type", "application/json");
-  }
-
-  if (auth) {
-    const token = getStoredToken();
-
-    if (token) {
-      nextHeaders.set("Authorization", `Bearer ${token}`);
-    }
-  }
-
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const { requiresAuth = true, headers, ...rest } = options;
+  const response = await apiClient.request<T>({
+    url: path,
     ...rest,
-    headers: nextHeaders,
+    headers,
+    requiresAuth,
   });
 
-  const data = (await response.json().catch(() => ({}))) as T & { message?: string };
-
-  if (response.status === 401) {
-    appStore.logout();
-    throw new Error((data as { message?: string }).message || "Your session has expired.");
-  }
-
-  if (!response.ok) {
-    throw new Error((data as { message?: string }).message || "Request failed.");
-  }
-
-  return data;
+  return response.data;
 }

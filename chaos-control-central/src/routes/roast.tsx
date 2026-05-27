@@ -8,8 +8,10 @@ import { TopRegretCard } from "@/components/lp/analytics/TopRegretCard";
 import { AnimatedNumber } from "@/components/lp/AnimatedNumber";
 import { apiRequest } from "@/lib/api";
 import { queryKeys } from "@/lib/query-keys";
+import { requireAuth } from "@/lib/route-guards";
 
 export const Route = createFileRoute("/roast")({
+  beforeLoad: requireAuth,
   head: () => ({ meta: [{ title: "Roast Analytics - Last Puff" }] }),
   component: RoastPage,
 });

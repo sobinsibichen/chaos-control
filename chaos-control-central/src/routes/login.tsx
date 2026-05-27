@@ -58,6 +58,7 @@ function LoginPage() {
     } catch (error) {
       console.error("Login request failed:", error);
       setErrorMessage(error instanceof Error ? error.message : "Login error: email or password wrong.");
+    } finally {
       setSubmitting(false);
     }
   };
@@ -74,7 +75,13 @@ function LoginPage() {
         </div>
 
         <div className="glass rounded-[2rem] border border-foreground/10 p-6 shadow-[0_24px_60px_rgba(15,23,42,0.08)]">
-          <div className="space-y-5">
+          <form
+            className="space-y-5"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleLogin();
+            }}
+          >
             <div>
               <label className="mb-2 block text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Email</label>
               <div className="flex items-center gap-3 rounded-2xl border border-foreground/10 bg-background/70 px-4 py-3 shadow-sm">
@@ -119,11 +126,11 @@ function LoginPage() {
                 />
                 Remember me
               </label>
-              <button className="text-muted-foreground hover:text-foreground transition-colors">Forgot password</button>
+              <button type="button" className="text-muted-foreground hover:text-foreground transition-colors">Forgot password</button>
             </div>
 
             <button
-              onClick={handleLogin}
+              type="submit"
               disabled={submitting}
               className="relative w-full overflow-hidden rounded-2xl bg-primary px-5 py-3 text-sm font-semibold tracking-wide text-primary-foreground shadow-[0_16px_34px_rgba(15,23,42,0.16)] transition-all hover:bg-primary/90"
             >
@@ -133,7 +140,7 @@ function LoginPage() {
             <div className="text-center text-sm text-muted-foreground">
               No account yet? <Link to="/signup" className="text-primary hover:underline">Sign up</Link>
             </div>
-          </div>
+          </form>
         </div>
       </motion.div>
     </div>

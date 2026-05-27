@@ -2,7 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { io, type Socket } from "socket.io-client";
 import { useAppStore } from "@/lib/app-store";
-import { API_BASE_URL } from "@/lib/api";
+import { API_URL } from "@/lib/api";
 import { queryKeys } from "@/lib/query-keys";
 
 let socket: Socket | null = null;
@@ -19,7 +19,7 @@ export function LiveSync() {
       return undefined;
     }
 
-    socket = io(API_BASE_URL, {
+    socket = io(API_URL, {
       auth: { token },
       transports: ["websocket"],
     });

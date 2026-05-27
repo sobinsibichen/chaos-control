@@ -7,6 +7,7 @@ import {
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
+import { Toaster } from "react-hot-toast";
 
 import appCss from "../styles.css?url";
 import { LiveSync } from "@/lib/live-sync";
@@ -103,6 +104,18 @@ function RootShell({ children }: { children: React.ReactNode }) {
       </head>
       <body>
         {children}
+        <Toaster
+          position="top-center"
+          toastOptions={{
+            style: {
+              background: "rgba(255,255,255,0.92)",
+              color: "#111827",
+              border: "1px solid rgba(15,23,42,0.08)",
+              boxShadow: "0 18px 40px rgba(15,23,42,0.12)",
+              borderRadius: "20px",
+            },
+          }}
+        />
         <Scripts />
       </body>
     </html>

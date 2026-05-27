@@ -16,7 +16,7 @@ interface AuthResponse {
 export async function signupRequest(payload: { name: string; email: string; password: string }) {
   const data = await apiRequest<Partial<AuthResponse>>("/api/auth/signup", {
     method: "POST",
-    auth: false,
+    requiresAuth: false,
     body: JSON.stringify(payload),
   });
   if (!data.success || !data.user || !data.token) {
@@ -28,7 +28,7 @@ export async function signupRequest(payload: { name: string; email: string; pass
 export async function loginRequest(payload: { email: string; password: string }) {
   const data = await apiRequest<Partial<AuthResponse>>("/api/auth/login", {
     method: "POST",
-    auth: false,
+    requiresAuth: false,
     body: JSON.stringify(payload),
   });
   if (!data.success || !data.user || !data.token) {
@@ -43,4 +43,8 @@ export async function getCurrentUserRequest() {
     throw new Error(data.message || "Unable to fetch current user.");
   }
   return data.user;
+}
+
+export async function logoutRequest() {
+  return Promise.resolve({ success: true });
 }
