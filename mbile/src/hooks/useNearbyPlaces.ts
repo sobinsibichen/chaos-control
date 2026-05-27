@@ -1,46 +1,52 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  type LatLngLiteral,
-  type NearbyStore,
-  searchNearbyStores,
-} from "@/services/googlePlaces";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import toast from "react-hot-toast";
+import { createFavoriteStore, deleteFavoriteStore, listFavoriteStores } from "@/lib/intelligenceApi";
+import { queryKeys } from "@/lib/query-keys";
+import { buildDirectionsUrl, type LatLngLiteral, type NearbyStore, searchNearbyStores } from "@/services/googlePlaces";
 
-const FAVORITES_STORAGE_KEY = "last-puff-nearby-store-favorites";
 const DEFAULT_QUERY = "Convenience stores";
 
-function readFavorites() {
-  if (typeof window === "undefined") {
-    return [] as string[];
-  }
-
-  try {
-    const raw = window.localStorage.getItem(FAVORITES_STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as string[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-function persistFavorites(next: string[]) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  window.localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(next));
-}
-
 export function useNearbyPlaces(ready: boolean) {
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState(DEFAULT_QUERY);
   const [location, setLocation] = useState<LatLngLiteral | null>(null);
   const [stores, setStores] = useState<NearbyStore[]>([]);
   const [selectedStoreId, setSelectedStoreId] = useState<string | null>(null);
-  const [favorites, setFavorites] = useState<string[]>(() => readFavorites());
   const [locating, setLocating] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const requestIdRef = useRef(0);
 
-  const favoriteIds = useMemo(() => new Set(favorites), [favorites]);
+  const favoriteStoresQuery = useQuery({
+    queryKey: queryKeys.favoriteStores,
+    queryFn: () => listFavoriteStores(100),
+  });
+
+  const favoriteIds = useMemo(
+    () => new Set((favoriteStoresQuery.data?.items ?? []).map((item) => item.placeId)),
+    [favoriteStoresQuery.data?.items],
+  );
+
+  const saveFavoriteMutation = useMutation({
+    mutationFn: createFavoriteStore,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.favoriteStores });
+    },
+    onError: (mutationError) => {
+      toast.error(mutationError instanceof Error ? mutationError.message : "Unable to save favorite store.");
+    },
+  });
+
+  const removeFavoriteMutation = useMutation({
+    mutationFn: deleteFavoriteStore,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.favoriteStores });
+    },
+    onError: (mutationError) => {
+      toast.error(mutationError instanceof Error ? mutationError.message : "Unable to remove favorite store.");
+    },
+  });
 
   const requestLocation = () =>
     new Promise<LatLngLiteral>((resolve, reject) => {
@@ -75,10 +81,7 @@ export function useNearbyPlaces(ready: boolean) {
       setLocation(nextLocation);
       return nextLocation;
     } catch (locateError) {
-      const message =
-        locateError instanceof Error
-          ? locateError.message
-          : "Unable to detect your current location.";
+      const message = locateError instanceof Error ? locateError.message : "Unable to detect your current location.";
       setError(message);
       throw locateError;
     } finally {
@@ -111,9 +114,7 @@ export function useNearbyPlaces(ready: boolean) {
 
         setStores(results);
         setSelectedStoreId((current) =>
-          current && results.some((store) => store.placeId === current)
-            ? current
-            : results[0]?.placeId ?? null,
+          current && results.some((store) => store.placeId === current) ? current : results[0]?.placeId ?? null,
         );
       } catch (searchError) {
         if (requestId !== requestIdRef.current) {
@@ -122,11 +123,7 @@ export function useNearbyPlaces(ready: boolean) {
 
         setStores([]);
         setSelectedStoreId(null);
-        setError(
-          searchError instanceof Error
-            ? searchError.message
-            : "Unable to load nearby stores right now.",
-        );
+        setError(searchError instanceof Error ? searchError.message : "Unable to load nearby stores right now.");
       } finally {
         if (requestId === requestIdRef.current) {
           setLoading(false);
@@ -137,14 +134,80 @@ export function useNearbyPlaces(ready: boolean) {
     return () => window.clearTimeout(timeout);
   }, [location, ready, searchTerm]);
 
-  const toggleFavorite = (placeId: string) => {
-    setFavorites((current) => {
-      const next = current.includes(placeId)
-        ? current.filter((value) => value !== placeId)
-        : [...current, placeId];
-      persistFavorites(next);
-      return next;
+  const toggleFavorite = async (placeId: string) => {
+    const store = stores.find((item) => item.placeId === placeId);
+    if (!store) {
+      return;
+    }
+
+    const previous = favoriteStoresQuery.data;
+
+    if (favoriteIds.has(placeId)) {
+      const existing = favoriteStoresQuery.data?.items.find((item) => item.placeId === placeId);
+      if (!existing) {
+        return;
+      }
+
+      queryClient.setQueryData(queryKeys.favoriteStores, previous ? {
+        ...previous,
+        items: previous.items.filter((item) => item.placeId !== placeId),
+      } : previous);
+
+      try {
+        await removeFavoriteMutation.mutateAsync(existing.id);
+      } catch {
+        queryClient.setQueryData(queryKeys.favoriteStores, previous);
+      }
+      return;
+    }
+
+    const optimisticItem = {
+      id: Date.now(),
+      placeId: store.placeId,
+      storeName: store.name,
+      address: store.address,
+      phoneNumber: store.phoneNumber,
+      mapsUrl: buildDirectionsUrl(store),
+      rating: store.rating ?? null,
+      isOpen: store.isOpen,
+      latitude: store.position.lat,
+      longitude: store.position.lng,
+      metadata: {
+        image: store.photoUrl,
+        matchedKeyword: store.matchedKeyword,
+        distanceMeters: store.distanceMeters,
+      },
+      createdAt: new Date().toISOString(),
+    };
+
+    queryClient.setQueryData(queryKeys.favoriteStores, previous ? {
+      ...previous,
+      items: [optimisticItem, ...previous.items],
+    } : {
+      items: [optimisticItem],
+      pagination: { page: 1, limit: 100, total: 1, totalPages: 1 },
     });
+
+    try {
+      await saveFavoriteMutation.mutateAsync({
+        placeId: store.placeId,
+        storeName: store.name,
+        address: store.address,
+        phoneNumber: store.phoneNumber,
+        mapsUrl: buildDirectionsUrl(store),
+        rating: store.rating ?? null,
+        isOpen: store.isOpen,
+        latitude: store.position.lat,
+        longitude: store.position.lng,
+        metadata: {
+          image: store.photoUrl,
+          matchedKeyword: store.matchedKeyword,
+          distanceMeters: store.distanceMeters,
+        },
+      });
+    } catch {
+      queryClient.setQueryData(queryKeys.favoriteStores, previous);
+    }
   };
 
   return {
@@ -158,7 +221,7 @@ export function useNearbyPlaces(ready: boolean) {
     toggleFavorite,
     locating,
     loading,
-    error,
+    error: error || (favoriteStoresQuery.error instanceof Error ? favoriteStoresQuery.error.message : ""),
     locate,
   };
 }

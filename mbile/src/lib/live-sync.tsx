@@ -33,6 +33,10 @@ export function LiveSync() {
       void queryClient.invalidateQueries({ queryKey: queryKeys.highlights });
       void queryClient.invalidateQueries({ queryKey: queryKeys.apps });
       void queryClient.invalidateQueries({ queryKey: queryKeys.nearby });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.smokeDna });
+      void queryClient.invalidateQueries({ queryKey: ["intelligence"] });
+      void queryClient.invalidateQueries({ queryKey: ["control"] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.favoriteStores });
     };
 
     socket.on("user:refresh", invalidateAll);

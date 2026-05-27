@@ -1,21 +1,46 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { Camera, HeartPulse, ShieldAlert, Sparkles, TimerReset, Waves } from "lucide-react";
 import toast from "react-hot-toast";
 import { AnimatedNumber } from "@/components/lp/AnimatedNumber";
 import { GlassCard } from "@/components/lp/GlassCard";
+import { createEmergencySession, createRitualSession, listEmergencySessions, listRitualSessions } from "@/lib/intelligenceApi";
 import { buildScannerInsight } from "@/lib/intelligence";
-import { useIntelligenceStore } from "@/lib/intelligence-store";
+import { queryKeys } from "@/lib/query-keys";
+import { createScannerHistory, listScannerHistory, type ScannerHistoryRecord } from "@/lib/scannerApi";
 import { useAppStore } from "@/lib/app-store";
 
 const tabs = ["Scanner", "Ritual Mode", "Emergency Mode"] as const;
 type ControlTab = (typeof tabs)[number];
 
+function ControlSkeleton() {
+  return (
+    <div className="space-y-4 animate-pulse">
+      <div className="h-32 rounded-[2rem] bg-foreground/5" />
+      <div className="h-72 rounded-[2rem] bg-foreground/5" />
+      <div className="h-40 rounded-[2rem] bg-foreground/5" />
+    </div>
+  );
+}
+
 export function ControlEnhancements() {
   const [activeTab, setActiveTab] = useState<ControlTab>("Scanner");
-  const saveScan = useIntelligenceStore((state) => state.saveScan);
-  const scanHistory = useIntelligenceStore((state) => state.scanHistory);
   const cigarettePrice = useAppStore((state) => state.auth.user?.cigarettePrice ?? state.settings.cigarettePrice);
+  const scannerQuery = useQuery({
+    queryKey: queryKeys.scannerHistory,
+    queryFn: () => listScannerHistory(12),
+  });
+  const ritualQuery = useQuery({
+    queryKey: queryKeys.ritualSessions,
+    queryFn: () => listRitualSessions(8),
+  });
+  const emergencyQuery = useQuery({
+    queryKey: queryKeys.emergencySessions,
+    queryFn: () => listEmergencySessions(8),
+  });
+
+  const isLoading = scannerQuery.isLoading || ritualQuery.isLoading || emergencyQuery.isLoading;
 
   return (
     <div className="mb-6">
@@ -28,9 +53,7 @@ export function ControlEnhancements() {
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
-                className={`relative whitespace-nowrap rounded-full px-4 py-2 text-xs font-semibold transition-colors ${
-                  active ? "text-primary-foreground" : "text-foreground"
-                }`}
+                className={`relative whitespace-nowrap rounded-full px-4 py-2 text-xs font-semibold transition-colors ${active ? "text-primary-foreground" : "text-foreground"}`}
               >
                 {active ? (
                   <motion.span
@@ -46,9 +69,11 @@ export function ControlEnhancements() {
         </div>
       </GlassCard>
 
-      {activeTab === "Scanner" ? <ScannerPanel cigarettePrice={cigarettePrice} scanHistory={scanHistory} onSaveScan={saveScan} /> : null}
-      {activeTab === "Ritual Mode" ? <RitualModePanel /> : null}
-      {activeTab === "Emergency Mode" ? <EmergencyModePanel /> : null}
+      {isLoading ? <ControlSkeleton /> : null}
+
+      {!isLoading && activeTab === "Scanner" ? <ScannerPanel cigarettePrice={cigarettePrice} scanHistory={scannerQuery.data ?? []} /> : null}
+      {!isLoading && activeTab === "Ritual Mode" ? <RitualModePanel history={ritualQuery.data ?? []} /> : null}
+      {!isLoading && activeTab === "Emergency Mode" ? <EmergencyModePanel history={emergencyQuery.data ?? []} /> : null}
     </div>
   );
 }
@@ -56,16 +81,26 @@ export function ControlEnhancements() {
 function ScannerPanel({
   cigarettePrice,
   scanHistory,
-  onSaveScan,
 }: {
   cigarettePrice: number;
-  scanHistory: ReturnType<typeof useIntelligenceStore.getState>["scanHistory"];
-  onSaveScan: ReturnType<typeof useIntelligenceStore.getState>["saveScan"];
+  scanHistory: ScannerHistoryRecord[];
 }) {
+  const queryClient = useQueryClient();
   const scannerRegionId = "last-puff-scanner-region";
   const scannerRef = useRef<unknown>(null);
   const [scanning, setScanning] = useState(false);
   const latest = scanHistory[0] ?? null;
+
+  const saveScanMutation = useMutation({
+    mutationFn: createScannerHistory,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.scannerHistory });
+      toast.success("Pack scanned and saved");
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "Unable to save scan.");
+    },
+  });
 
   useEffect(() => {
     return () => {
@@ -80,7 +115,7 @@ function ScannerPanel({
   }, []);
 
   const startScan = async () => {
-    if (scanning) {
+    if (scanning || saveScanMutation.isPending) {
       return;
     }
 
@@ -93,14 +128,19 @@ function ScannerPanel({
       await scanner.start(
         { facingMode: "environment" },
         { fps: 10, qrbox: { width: 220, height: 220 } },
-        async (decodedText, decodedResult) => {
+        async (decodedText) => {
           const summary = buildScannerInsight(decodedText, cigarettePrice);
-          onSaveScan({
-            id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-            scannedAt: new Date().toISOString(),
-            ...summary,
+          await saveScanMutation.mutateAsync({
+            codeValue: summary.code,
+            codeFormat: summary.format,
+            source: summary.source,
+            brand: summary.brand,
+            packPrice: summary.priceEstimate,
+            nicotineMg: summary.nicotineMg,
+            tarMg: summary.tarMg,
+            damageScore: summary.damageScore,
+            chemicals: summary.chemicals,
           });
-          toast.success("Pack scanned");
           await scanner.stop().catch(() => {});
           await scanner.clear().catch(() => {});
           scannerRef.current = null;
@@ -139,7 +179,7 @@ function ScannerPanel({
         </div>
         <div className="mt-4 flex gap-2">
           <button onClick={() => void startScan()} className="rounded-full bg-primary px-4 py-3 text-xs font-semibold text-primary-foreground">
-            Start Scan
+            {saveScanMutation.isPending ? "Saving..." : "Start Scan"}
           </button>
           <button onClick={() => void stopScan()} className="rounded-full border border-foreground/10 bg-background px-4 py-3 text-xs font-semibold text-foreground">
             Stop
@@ -179,7 +219,7 @@ function ScannerPanel({
           <div className="grid grid-cols-2 gap-3">
             <MetricCard label="Nicotine" value={latest.nicotineMg ?? 0} suffix="mg" />
             <MetricCard label="Tar" value={latest.tarMg ?? 0} suffix="mg" />
-            <MetricCard label="Pack Price" value={latest.priceEstimate ?? 0} prefix="Rs" />
+            <MetricCard label="Pack Price" value={latest.packPrice ?? 0} prefix="Rs" />
             <MetricCard label="Scans Logged" value={scanHistory.length} />
           </div>
           <div className="mt-4 rounded-2xl border border-foreground/10 bg-background px-4 py-4">
@@ -191,7 +231,13 @@ function ScannerPanel({
             </div>
           </div>
         </GlassCard>
-      ) : null}
+      ) : (
+        <GlassCard className="border border-foreground/10">
+          <div className="rounded-2xl border border-dashed border-foreground/10 bg-background px-4 py-6 text-sm text-muted-foreground">
+            No scanner history yet. Your first successful scan will save automatically to the backend.
+          </div>
+        </GlassCard>
+      )}
     </div>
   );
 }
@@ -205,13 +251,26 @@ function MetricCard({ label, value, prefix = "", suffix = "" }: { label: string;
   );
 }
 
-function RitualModePanel() {
+function RitualModePanel({ history }: { history: Awaited<ReturnType<typeof listRitualSessions>> }) {
+  const queryClient = useQueryClient();
   const [running, setRunning] = useState(false);
   const [breathPhase, setBreathPhase] = useState<"inhale" | "hold" | "exhale">("inhale");
   const [seconds, setSeconds] = useState(0);
   const [mood, setMood] = useState("steady");
+  const [ambientOn, setAmbientOn] = useState(false);
   const audioContextRef = useRef<AudioContext | null>(null);
   const oscillatorRef = useRef<OscillatorNode | null>(null);
+
+  const saveRitualMutation = useMutation({
+    mutationFn: createRitualSession,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.ritualSessions });
+      toast.success("Ritual session saved");
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "Unable to save ritual session.");
+    },
+  });
 
   useEffect(() => {
     if (!running) {
@@ -233,6 +292,7 @@ function RitualModePanel() {
       oscillatorRef.current = null;
       audioContextRef.current?.close().catch(() => {});
       audioContextRef.current = null;
+      setAmbientOn(false);
       toast.success("Ambient sound stopped");
       return;
     }
@@ -248,7 +308,28 @@ function RitualModePanel() {
     oscillator.start();
     audioContextRef.current = context;
     oscillatorRef.current = oscillator;
+    setAmbientOn(true);
     toast.success("Ambient sound playing");
+  };
+
+  const toggleSession = async () => {
+    if (running) {
+      setRunning(false);
+      if (seconds > 0) {
+        await saveRitualMutation.mutateAsync({
+          mood,
+          durationSeconds: seconds,
+          breathCycles: Math.max(1, Math.floor(seconds / 4)),
+          ambientSound: ambientOn,
+          sessionData: { breathPhase },
+        });
+      }
+      setSeconds(0);
+      return;
+    }
+
+    setSeconds(0);
+    setRunning(true);
   };
 
   return (
@@ -275,11 +356,11 @@ function RitualModePanel() {
             </motion.div>
           </div>
           <div className="mt-6 grid grid-cols-2 gap-3">
-            <button onClick={() => setRunning((current) => !current)} className="rounded-2xl bg-primary px-4 py-3 text-xs font-semibold text-primary-foreground">
-              {running ? "Pause Session" : "Start Session"}
+            <button onClick={() => void toggleSession()} className="rounded-2xl bg-primary px-4 py-3 text-xs font-semibold text-primary-foreground">
+              {running ? "End Session" : "Start Session"}
             </button>
             <button onClick={() => void toggleAmbient()} className="rounded-2xl border border-foreground/10 bg-background px-4 py-3 text-xs font-semibold text-foreground">
-              Ambient Sound
+              {ambientOn ? "Stop Ambient" : "Ambient Sound"}
             </button>
           </div>
         </div>
@@ -295,9 +376,7 @@ function RitualModePanel() {
             <button
               key={option}
               onClick={() => setMood(option)}
-              className={`rounded-2xl px-3 py-3 text-xs font-semibold transition-colors ${
-                mood === option ? "bg-primary text-primary-foreground" : "bg-background text-foreground border border-foreground/10"
-              }`}
+              className={`rounded-2xl px-3 py-3 text-xs font-semibold transition-colors ${mood === option ? "bg-primary text-primary-foreground" : "bg-background text-foreground border border-foreground/10"}`}
             >
               {option}
             </button>
@@ -307,11 +386,28 @@ function RitualModePanel() {
           Ritual Mode is tuned for a <span className="font-semibold capitalize text-foreground">{mood}</span> mood and keeps your breathing cadence gentle instead of impulsive.
         </div>
       </GlassCard>
+
+      <GlassCard className="border border-foreground/10">
+        <div className="mb-4 text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Recent ritual sessions</div>
+        <div className="space-y-3">
+          {history.length ? history.slice(0, 3).map((item) => (
+            <div key={item.id} className="rounded-2xl border border-foreground/10 bg-background px-4 py-4">
+              <div className="text-sm font-semibold text-foreground capitalize">{item.mood}</div>
+              <div className="mt-1 text-xs text-muted-foreground">{item.durationSeconds}s • {item.breathCycles} cycles</div>
+            </div>
+          )) : (
+            <div className="rounded-2xl border border-dashed border-foreground/10 bg-background px-4 py-6 text-sm text-muted-foreground">
+              No ritual sessions saved yet.
+            </div>
+          )}
+        </div>
+      </GlassCard>
     </div>
   );
 }
 
-function EmergencyModePanel() {
+function EmergencyModePanel({ history }: { history: Awaited<ReturnType<typeof listEmergencySessions>> }) {
+  const queryClient = useQueryClient();
   const [active, setActive] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState(180);
   const motivations = useMemo(
@@ -322,6 +418,17 @@ function EmergencyModePanel() {
     ],
     [],
   );
+
+  const saveEmergencyMutation = useMutation({
+    mutationFn: createEmergencySession,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.emergencySessions });
+      toast.success("Emergency session saved");
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "Unable to save emergency session.");
+    },
+  });
 
   useEffect(() => {
     if (!active) {
@@ -334,6 +441,15 @@ function EmergencyModePanel() {
         if (current <= 1) {
           window.clearInterval(interval);
           setActive(false);
+          void saveEmergencyMutation.mutateAsync({
+            triggerReason: "urge spike",
+            durationSeconds: 180,
+            completed: true,
+            breathingCompleted: true,
+            vibrationUsed: true,
+            motivationShown: motivations,
+            sessionData: { completedAt: new Date().toISOString() },
+          });
           toast.success("Delay challenge completed");
           return 180;
         }
@@ -342,7 +458,7 @@ function EmergencyModePanel() {
     }, 1000);
 
     return () => window.clearInterval(interval);
-  }, [active]);
+  }, [active, motivations, saveEmergencyMutation]);
 
   const breathingStep = secondsLeft % 12 < 4 ? "Inhale" : secondsLeft % 12 < 8 ? "Hold" : "Exhale";
   const progress = ((180 - secondsLeft) / 180) * 100;
@@ -353,7 +469,7 @@ function EmergencyModePanel() {
         <div className="flex items-start justify-between gap-3">
           <div>
             <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Emergency Mode</div>
-            <div className="mt-2 text-xl font-semibold text-foreground">I’m about to smoke</div>
+            <div className="mt-2 text-xl font-semibold text-foreground">I'm about to smoke</div>
             <p className="mt-2 text-sm text-muted-foreground">Start a three-minute interruption loop with breathing, vibration, and a forced delay challenge.</p>
           </div>
           <ShieldAlert className="h-6 w-6 text-red-600 animate-danger-pulse" />
@@ -407,7 +523,23 @@ function EmergencyModePanel() {
         </div>
         <div className="mt-4 flex items-center gap-3 rounded-2xl border border-foreground/10 bg-background px-4 py-4 text-sm text-muted-foreground">
           <Sparkles className="h-4 w-4 text-amber-500" />
-          Emergency mode will vibrate at activation and hold the timer until the urge window softens.
+          Emergency mode vibrates on activation and saves each completed challenge to your backend history.
+        </div>
+      </GlassCard>
+
+      <GlassCard className="border border-foreground/10">
+        <div className="mb-4 text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Recent emergency sessions</div>
+        <div className="space-y-3">
+          {history.length ? history.slice(0, 3).map((item) => (
+            <div key={item.id} className="rounded-2xl border border-foreground/10 bg-background px-4 py-4">
+              <div className="text-sm font-semibold text-foreground">{item.triggerReason}</div>
+              <div className="mt-1 text-xs text-muted-foreground">{item.durationSeconds}s • {item.completed ? "completed" : "interrupted"}</div>
+            </div>
+          )) : (
+            <div className="rounded-2xl border border-dashed border-foreground/10 bg-background px-4 py-6 text-sm text-muted-foreground">
+              No emergency sessions saved yet.
+            </div>
+          )}
         </div>
       </GlassCard>
     </div>
