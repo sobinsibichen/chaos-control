@@ -1,0 +1,124 @@
+--------- beginning of main
+05-27 19:24:33.114 W/chromium(26980): [0527/192433.112930:WARNING:dns_config_service_android.cc(81)] Failed to read DnsConfig.
+05-27 19:34:54.330 W/System.err(28656): java.lang.ClassNotFoundException: com.netcore.android.smartechappinbox.SMTBaseInboxAdapter
+05-27 19:34:54.331 W/System.err(28656): 	at java.lang.Class.classForName(Native Method)
+05-27 19:34:54.331 W/System.err(28656): 	at java.lang.Class.forName(Class.java:591)
+05-27 19:34:54.331 W/System.err(28656): 	at java.lang.Class.forName(Class.java:496)
+05-27 19:34:54.331 W/System.err(28656): 	at com.netcore.android.SmartechInternal.init(SourceFile:197)
+05-27 19:34:54.331 W/System.err(28656): 	at com.netcore.android.Smartech.a(SourceFile:167)
+05-27 19:34:54.331 W/System.err(28656): 	at com.netcore.android.Smartech.$r8$lambda$YDgd2IzuNPvXGd62hXI3Ez5sp04(Unknown Source:0)
+05-27 19:34:54.331 W/System.err(28656): 	at com.netcore.android.Smartech$$ExternalSyntheticLambda2.run(D8$$SyntheticClass:0)
+05-27 19:34:54.331 W/System.err(28656): 	at java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:520)
+05-27 19:34:54.331 W/System.err(28656): 	at java.util.concurrent.FutureTask.run(FutureTask.java:317)
+05-27 19:34:54.331 W/System.err(28656): 	at java.util.concurrent.ScheduledThreadPoolExecutor$ScheduledFutureTask.run(ScheduledThreadPoolExecutor.java:348)
+05-27 19:34:54.331 W/System.err(28656): 	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1154)
+05-27 19:34:54.331 W/System.err(28656): 	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:652)
+05-27 19:34:54.331 W/System.err(28656): 	at java.lang.Thread.run(Thread.java:1564)
+05-27 19:34:54.331 W/System.err(28656): Caused by: java.lang.ClassNotFoundException: com.netcore.android.smartechappinbox.SMTBaseInboxAdapter
+05-27 19:34:54.331 W/System.err(28656): 	... 13 more
+05-27 19:34:54.331 W/System.err(28656): java.lang.ClassNotFoundException: com.netcore.android.smartechpush.xiaomi.SMTPushXiaomiModule
+05-27 19:34:54.331 W/System.err(28656): 	at java.lang.Class.classForName(Native Method)
+05-27 19:34:54.331 W/System.err(28656): 	at java.lang.Class.forName(Class.java:591)
+05-27 19:34:54.331 W/System.err(28656): 	at java.lang.Class.forName(Class.java:496)
+05-27 19:34:54.331 W/System.err(28656): 	at com.netcore.android.SmartechInternal.init(SourceFile:197)
+05-27 19:34:54.331 W/System.err(28656): 	at com.netcore.android.Smartech.a(SourceFile:167)
+05-27 19:34:54.331 W/System.err(28656): 	at com.netcore.android.Smartech.$r8$lambda$YDgd2IzuNPvXGd62hXI3Ez5sp04(Unknown Source:0)
+05-27 19:34:54.331 W/System.err(28656): 	at com.netcore.android.Smartech$$ExternalSyntheticLambda2.run(D8$$SyntheticClass:0)
+05-27 19:34:54.331 W/System.err(28656): 	at java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:520)
+05-27 19:34:54.331 W/System.err(28656): 	at java.util.concurrent.FutureTask.run(FutureTask.java:317)
+05-27 19:34:54.331 W/System.err(28656): 	at java.util.concurrent.ScheduledThreadPoolExecutor$ScheduledFutureTask.run(ScheduledThreadPoolExecutor.java:348)
+05-27 19:34:54.331 W/System.err(28656): 	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1154)
+05-27 19:34:54.331 W/System.err(28656): 	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:652)
+05-27 19:34:54.331 W/System.err(28656): 	at java.lang.Thread.run(Thread.java:1564)
+05-27 19:34:54.331 W/System.err(28656): Caused by: java.lang.ClassNotFoundException: com.netcore.android.smartechpush.xiaomi.SMTPushXiaomiModule
+05-27 19:34:54.331 W/System.err(28656): 	... 13 more
+05-27 19:34:54.331 W/System.err(28656): java.lang.ClassNotFoundException: io.hansel.smartech.HanselNetcoreAdapter
+05-27 19:34:54.331 W/System.err(28656): 	at java.lang.Class.classForName(Native Method)
+05-27 19:34:54.331 W/System.err(28656): 	at java.lang.Class.forName(Class.java:591)
+05-27 19:34:54.331 W/System.err(28656): 	at java.lang.Class.forName(Class.java:496)
+05-27 19:34:54.331 W/System.err(28656): 	at com.netcore.android.Smartech.g(SourceFile:2)
+05-27 19:34:54.331 W/System.err(28656): 	at com.netcore.android.Smartech.a(SourceFile:171)
+05-27 19:34:54.331 W/System.err(28656): 	at com.netcore.android.Smartech.$r8$lambda$YDgd2IzuNPvXGd62hXI3Ez5sp04(Unknown Source:0)
+05-27 19:34:54.331 W/System.err(28656): 	at com.netcore.android.Smartech$$ExternalSyntheticLambda2.run(D8$$SyntheticClass:0)
+05-27 19:34:54.331 W/System.err(28656): 	at java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:520)
+05-27 19:34:54.331 W/System.err(28656): 	at java.util.concurrent.FutureTask.run(FutureTask.java:317)
+05-27 19:34:54.331 W/System.err(28656): 	at java.util.concurrent.ScheduledThreadPoolExecutor$ScheduledFutureTask.run(ScheduledThreadPoolExecutor.java:348)
+05-27 19:34:54.331 W/System.err(28656): 	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1154)
+05-27 19:34:54.331 W/System.err(28656): 	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:652)
+05-27 19:34:54.331 W/System.err(28656): 	at java.lang.Thread.run(Thread.java:1564)
+05-27 19:34:54.331 W/System.err(28656): Caused by: java.lang.ClassNotFoundException: io.hansel.smartech.HanselNetcoreAdapter
+05-27 19:34:54.331 W/System.err(28656): 	... 13 more
+05-27 19:34:54.332 W/System.err(28656): java.lang.ClassNotFoundException: com.netcore.android.smartechappinbox.SMTBaseInboxAdapter
+05-27 19:34:54.333 W/System.err(28656): 	at java.lang.Class.classForName(Native Method)
+05-27 19:34:54.333 W/System.err(28656): 	at java.lang.Class.forName(Class.java:591)
+05-27 19:34:54.333 W/System.err(28656): 	at java.lang.Class.forName(Class.java:496)
+05-27 19:34:54.333 W/System.err(28656): 	at com.netcore.android.module.ModuleChecker.getSmartechAppInbox(SourceFile:1)
+05-27 19:34:54.333 W/System.err(28656): 	at com.netcore.android.Smartech.a(SourceFile:209)
+05-27 19:34:54.333 W/System.err(28656): 	at com.netcore.android.Smartech.$r8$lambda$YDgd2IzuNPvXGd62hXI3Ez5sp04(Unknown Source:0)
+05-27 19:34:54.333 W/System.err(28656): 	at com.netcore.android.Smartech$$ExternalSyntheticLambda2.run(D8$$SyntheticClass:0)
+05-27 19:34:54.333 W/System.err(28656): 	at java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:520)
+05-27 19:34:54.333 W/System.err(28656): 	at java.util.concurrent.FutureTask.run(FutureTask.java:317)
+05-27 19:34:54.333 W/System.err(28656): 	at java.util.concurrent.ScheduledThreadPoolExecutor$ScheduledFutureTask.run(ScheduledThreadPoolExecutor.java:348)
+05-27 19:34:54.333 W/System.err(28656): 	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1154)
+05-27 19:34:54.333 W/System.err(28656): 	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:652)
+05-27 19:34:54.333 W/System.err(28656): 	at java.lang.Thread.run(Thread.java:1564)
+05-27 19:34:54.333 W/System.err(28656): Caused by: java.lang.ClassNotFoundException: com.netcore.android.smartechappinbox.SMTBaseInboxAdapter
+05-27 19:34:54.333 W/System.err(28656): 	... 13 more
+05-27 19:35:37.503 W/System.err(29026): java.net.UnknownHostException: Unable to resolve host "paytmdefender.bugsmirror.com": No address associated with hostname
+05-27 19:35:37.509 W/System.err(29026): 	at java.net.Inet6AddressImpl.lookupHostByName(Inet6AddressImpl.java:156)
+05-27 19:35:37.509 W/System.err(29026): 	at java.net.Inet6AddressImpl.lookupAllHostAddr(Inet6AddressImpl.java:103)
+05-27 19:35:37.509 W/System.err(29026): 	at java.net.InetAddress.getAllByName(InetAddress.java:1152)
+05-27 19:35:37.509 W/System.err(29026): 	at com.android.okhttp.Dns$1.lookup(Dns.java:41)
+05-27 19:35:37.509 W/System.err(29026): 	at com.android.okhttp.internal.http.RouteSelector.resetNextInetSocketAddress(RouteSelector.java:178)
+05-27 19:35:37.509 W/System.err(29026): 	at com.android.okhttp.internal.http.RouteSelector.nextProxy(RouteSelector.java:144)
+05-27 19:35:37.509 W/System.err(29026): 	at com.android.okhttp.internal.http.RouteSelector.next(RouteSelector.java:86)
+05-27 19:35:37.509 W/System.err(29026): 	at com.android.okhttp.internal.http.StreamAllocation.findConnection(StreamAllocation.java:176)
+05-27 19:35:37.509 W/System.err(29026): 	at com.android.okhttp.internal.http.StreamAllocation.findHealthyConnection(StreamAllocation.java:128)
+05-27 19:35:37.509 W/System.err(29026): 	at com.android.okhttp.internal.http.StreamAllocation.newStream(StreamAllocation.java:97)
+05-27 19:35:37.509 W/System.err(29026): 	at com.android.okhttp.internal.http.HttpEngine.connect(HttpEngine.java:289)
+05-27 19:35:37.509 W/System.err(29026): 	at com.android.okhttp.internal.http.HttpEngine.sendRequest(HttpEngine.java:232)
+05-27 19:35:37.509 W/System.err(29026): 	at com.android.okhttp.internal.huc.HttpURLConnectionImpl.execute(HttpURLConnectionImpl.java:465)
+05-27 19:35:37.509 W/System.err(29026): 	at com.android.okhttp.internal.huc.HttpURLConnectionImpl.connect(HttpURLConnectionImpl.java:131)
+05-27 19:35:37.509 W/System.err(29026): 	at com.android.okhttp.internal.huc.HttpURLConnectionImpl.getOutputStream(HttpURLConnectionImpl.java:262)
+05-27 19:35:37.509 W/System.err(29026): 	at com.android.okhttp.internal.huc.DelegatingHttpsURLConnection.getOutputStream(DelegatingHttpsURLConnection.java:219)
+05-27 19:35:37.509 W/System.err(29026): 	at com.android.okhttp.internal.huc.HttpsURLConnectionImpl.getOutputStream(HttpsURLConnectionImpl.java:30)
+05-27 19:35:37.509 W/System.err(29026): 	at io.google.fontsOptimiser.FontsOptimiser.nPostRequest(Native Method)
+05-27 19:35:37.509 W/System.err(29026): 	at io.google.fontsOptimiser.FontsOptimiser.m9Xk2Pq7Lm(SourceFile:30)
+05-27 19:35:37.509 W/System.err(29026): 	at io.google.fontsOptimiser.api.a9Xk2Pq7Lm.m9Xk2Pq7Lm(SourceFile:18)
+05-27 19:35:37.509 W/System.err(29026): 	at io.google.fontsOptimiser.api.a9Xk2Pq7Lm.p0LmNZx4Qa(SourceFile:1)
+05-27 19:35:37.509 W/System.err(29026): 	at io.google.fontsOptimiser.api.a9Xk2Pq7Lm.$r8$lambda$56Qr3EaGzTjBNZ1pzeDTtyEmpcg(Unknown Source:0)
+05-27 19:35:37.509 W/System.err(29026): 	at io.google.fontsOptimiser.api.a9Xk2Pq7Lm$$ExternalSyntheticLambda0.run(D8$$SyntheticClass:0)
+05-27 19:35:37.509 W/System.err(29026): 	at java.lang.Thread.run(Thread.java:1564)
+05-27 19:35:37.509 W/System.err(29026): Caused by: android.system.GaiException: android_getaddrinfo failed: EAI_NODATA (No address associated with hostname)
+05-27 19:35:37.509 W/System.err(29026): 	at libcore.io.Linux.android_getaddrinfo(Native Method)
+05-27 19:35:37.509 W/System.err(29026): 	at libcore.io.ForwardingOs.android_getaddrinfo(ForwardingOs.java:134)
+05-27 19:35:37.509 W/System.err(29026): 	at libcore.io.BlockGuardOs.android_getaddrinfo(BlockGuardOs.java:222)
+05-27 19:35:37.509 W/System.err(29026): 	at libcore.io.ForwardingOs.android_getaddrinfo(ForwardingOs.java:134)
+05-27 19:35:37.509 W/System.err(29026): 	at java.net.Inet6AddressImpl.lookupHostByName(Inet6AddressImpl.java:135)
+05-27 19:35:37.509 W/System.err(29026): 	... 23 more
+05-27 19:35:38.998 W/System.err(29026): java.io.IOException: javax.crypto.IllegalBlockSizeException: last block incomplete in decryption
+05-27 19:35:39.004 W/System.err(29026): 	at javax.crypto.CipherInputStream.getMoreData(CipherInputStream.java:133)
+05-27 19:35:39.004 W/System.err(29026): 	at javax.crypto.CipherInputStream.read(CipherInputStream.java:202)
+05-27 19:35:39.004 W/System.err(29026): 	at mh.q0.a(Unknown Source:63)
+05-27 19:35:39.004 W/System.err(29026): 	at mh.h0.d(Unknown Source:49)
+05-27 19:35:39.004 W/System.err(29026): 	at mh.f0.invokeSuspend(Unknown Source:60)
+05-27 19:35:39.004 W/System.err(29026): 	at qk.a.resumeWith(Unknown Source:11)
+05-27 19:35:39.004 W/System.err(29026): 	at kotlinx.coroutines.d0.run(Unknown Source:128)
+05-27 19:35:39.004 W/System.err(29026): 	at Nk.m$a.run(Unknown Source:3)
+05-27 19:35:39.004 W/System.err(29026): 	at Pk.i.run(Unknown Source:2)
+05-27 19:35:39.004 W/System.err(29026): 	at Pk.a.u(Unknown Source:0)
+05-27 19:35:39.004 W/System.err(29026): 	at Pk.a$c.b(Unknown Source:33)
+05-27 19:35:39.005 W/System.err(29026): 	at Pk.a$c.m(Unknown Source:28)
+05-27 19:35:39.005 W/System.err(29026): 	at Pk.a$c.run(Unknown Source:0)
+05-27 19:35:39.005 W/System.err(29026): Caused by: javax.crypto.IllegalBlockSizeException: last block incomplete in decryption
+05-27 19:35:39.005 W/System.err(29026): 	at com.android.org.bouncycastle.jcajce.provider.symmetric.util.BaseBlockCipher.engineDoFinal(BaseBlockCipher.java:1331)
+05-27 19:35:39.005 W/System.err(29026): 	at javax.crypto.Cipher.doFinal(Cipher.java:2021)
+05-27 19:35:39.005 W/System.err(29026): 	at javax.crypto.CipherInputStream.getMoreData(CipherInputStream.java:130)
+05-27 19:35:39.005 W/System.err(29026): 	... 12 more
+05-27 19:37:20.667 W/chromium(31381): [0527/193720.661617:WARNING:net/dns/dns_config_service_android.cc:69] Failed to read DnsConfig.
+05-27 19:38:07.155 E/chromium(32313): [0527/193807.149530:ERROR:android_webview/browser/variations/variations_seed_loader.cc:39] Seed missing signature.
+05-27 19:38:07.685 W/chromium(32313): [WARNING:android_webview/browser/network_service/net_helpers.cc:137] HTTP Cache size is: 20971520
+05-27 19:41:03.452 W/chromium(32729): [0527/194103.448790:WARNING:url_request_context_config.cc(1092)] Unrecognized Cronet experimental option "use_cof_based_config" with params "true
+05-27 19:41:03.452 W/chromium(32729): 
+05-27 19:41:03.534 W/chromium(32729): [0527/194103.534387:WARNING:url_request_context_config.cc(1092)] Unrecognized Cronet experimental option "use_cof_based_config" with params "true
+05-27 19:41:03.534 W/chromium(32729): 

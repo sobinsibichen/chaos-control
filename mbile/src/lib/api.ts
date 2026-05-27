@@ -56,6 +56,22 @@ type ApiInternalConfig = InternalAxiosRequestConfig & {
   auth?: boolean;
 };
 
+function getAuthToken() {
+  const stateToken = appStore.getState().auth.token;
+  if (stateToken) {
+    return stateToken;
+  }
+
+  return getStoredToken();
+}
+
+function shouldDebugAuthRequest(url?: string) {
+  return Boolean(
+    url &&
+      /\/api\/(apps|analytics|activity|smoke-dna|smoke-replay|craving-predictions|voice-commands|stats\/dashboard)/.test(url),
+  );
+}
+
 function shouldInvalidateSession(config?: ApiInternalConfig) {
   const url = config?.url ?? "";
   return /\/api\/auth\/me(?:\?|$)/.test(url);
@@ -71,12 +87,20 @@ export const apiClient = axios.create({
 
 apiClient.interceptors.request.use((config: ApiInternalConfig) => {
   const shouldAttachAuth = config.auth !== false;
-  const token = shouldAttachAuth ? getStoredToken() : null;
+  const token = shouldAttachAuth ? getAuthToken() : null;
+  const url = config.url ?? "";
+  const method = (config.method ?? "get").toUpperCase();
 
   if (token) {
     config.headers.set("Authorization", `Bearer ${token}`);
+    if (shouldAttachAuth && shouldDebugAuthRequest(url)) {
+      console.info(`[auth-debug] attached token for ${method} ${url}`);
+    }
   } else {
     config.headers.delete("Authorization");
+    if (shouldAttachAuth && shouldDebugAuthRequest(url)) {
+      console.warn(`[auth-debug] missing token for ${method} ${url}`);
+    }
   }
 
   return config;
@@ -86,11 +110,16 @@ apiClient.interceptors.response.use(
   (response) => response,
   (error: AxiosError<{ message?: string }>) => {
     const status = error.response?.status;
+    const url = error.config?.url ?? "";
     const backendMessage = error.response?.data?.message || error.message || "Request failed.";
     const normalizedMessage =
       /invalid input syntax for type uuid|invalid input syntax for type bigint|invalid input syntax for type integer/i.test(backendMessage)
         ? "Your session or request data is out of sync. Please try again."
         : backendMessage;
+
+    if (shouldDebugAuthRequest(url)) {
+      console.warn(`[auth-debug] ${status ?? "ERR"} ${url} :: ${normalizedMessage}`);
+    }
 
     if (status === 401 && shouldInvalidateSession(error.config as ApiInternalConfig | undefined)) {
       appStore.logout();
@@ -123,9 +152,18 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
   const { auth = true, body, method = "GET", headers = {}, ...rest } = options;
   const data = normalizeBody(body, headers);
   const nextHeaders = { ...headers };
+  const token = auth ? getAuthToken() : null;
 
   if (data !== undefined && !nextHeaders["Content-Type"] && !nextHeaders["content-type"]) {
     nextHeaders["Content-Type"] = "application/json";
+  }
+
+  if (auth) {
+    if (token) {
+      nextHeaders.Authorization = `Bearer ${token}`;
+    } else {
+      delete nextHeaders.Authorization;
+    }
   }
 
   const response = await apiClient.request<T>({

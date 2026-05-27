@@ -1,6 +1,99 @@
 const pool = require("../config/db");
 const { ensureAchievementDefinitions, ensureLevelDefinitions } = require("./achievementEngine");
 
+const premiumUserTables = [
+  "smoke_dna",
+  "smoke_replay",
+  "craving_predictions",
+  "voice_commands",
+  "scanner_history",
+  "ritual_sessions",
+  "emergency_sessions",
+  "favorite_stores",
+  "user_milestones",
+  "user_rewards",
+  "completion_certificates",
+];
+
+async function normalizeUserIdColumn(client, tableName) {
+  const columnResult = await client.query(
+    `
+      SELECT data_type, udt_name
+      FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = $1 AND column_name = 'user_id'
+    `,
+    [tableName],
+  );
+
+  const column = columnResult.rows[0];
+  if (!column || column.data_type === "bigint" || column.udt_name === "int8") {
+    return;
+  }
+
+  await client.query(`DELETE FROM public.${tableName}`);
+
+  const constraintResult = await client.query(
+    `
+      SELECT con.conname
+      FROM pg_constraint con
+      INNER JOIN pg_class rel ON rel.oid = con.conrelid
+      INNER JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
+      WHERE
+        nsp.nspname = 'public'
+        AND rel.relname = $1
+        AND con.contype = 'f'
+        AND EXISTS (
+          SELECT 1
+          FROM unnest(con.conkey) AS key_attnum
+          INNER JOIN pg_attribute att
+            ON att.attrelid = rel.oid
+           AND att.attnum = key_attnum
+          WHERE att.attname = 'user_id'
+        )
+    `,
+    [tableName],
+  );
+
+  const policyResult = await client.query(
+    `
+      SELECT policyname
+      FROM pg_policies
+      WHERE schemaname = 'public' AND tablename = $1
+    `,
+    [tableName],
+  );
+
+  for (const row of policyResult.rows) {
+    await client.query(`DROP POLICY IF EXISTS "${row.policyname}" ON public.${tableName}`);
+  }
+
+  await client.query(`ALTER TABLE public.${tableName} DISABLE ROW LEVEL SECURITY`);
+
+  for (const row of constraintResult.rows) {
+    await client.query(`ALTER TABLE public.${tableName} DROP CONSTRAINT IF EXISTS "${row.conname}"`);
+  }
+
+  await client.query(`
+    ALTER TABLE public.${tableName}
+    ALTER COLUMN user_id TYPE BIGINT USING NULL
+  `);
+  await client.query(`
+    ALTER TABLE public.${tableName}
+    ALTER COLUMN user_id SET NOT NULL
+  `);
+  await client.query(`
+    ALTER TABLE public.${tableName}
+    ADD CONSTRAINT ${tableName}_user_id_fkey
+    FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE
+  `);
+}
+
+async function normalizePremiumFeatureSchema(client) {
+  for (const tableName of premiumUserTables) {
+    await normalizeUserIdColumn(client, tableName);
+  }
+}
+
 async function ensureSchema() {
   const client = await pool.connect();
 
@@ -232,6 +325,7 @@ async function ensureSchema() {
     await client.query(`CREATE INDEX IF NOT EXISTS idx_user_milestones_user_key ON public.user_milestones (user_id, milestone_key)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_user_rewards_user_key ON public.user_rewards (user_id, reward_key)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_completion_certificates_user_created ON public.completion_certificates (user_id, created_at DESC)`);
+    await normalizePremiumFeatureSchema(client);
     await ensureAchievementDefinitions(client);
     await ensureLevelDefinitions(client);
     await client.query("COMMIT");
