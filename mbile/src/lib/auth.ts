@@ -1,4 +1,5 @@
 import { getCurrentUserRequest } from "@/lib/auth-api";
+import { ApiRequestError } from "@/lib/api";
 import { appStore } from "@/lib/app-store";
 
 let bootstrapPromise: Promise<void> | null = null;
@@ -28,8 +29,13 @@ export async function bootstrapAuth() {
           visibilityEnabled: user.visibilityEnabled,
         });
       })
-      .catch(() => {
-        appStore.logout();
+      .catch((error) => {
+        if (error instanceof ApiRequestError && error.status === 401) {
+          appStore.logout();
+          return;
+        }
+
+        console.warn("Auth bootstrap skipped due to a temporary request failure.", error);
       })
       .finally(() => {
         bootstrapPromise = null;

@@ -36,6 +36,16 @@ export interface ApiResponse<T> {
   message: string;
 }
 
+export class ApiRequestError extends Error {
+  status?: number;
+
+  constructor(message: string, status?: number) {
+    super(message);
+    this.name = "ApiRequestError";
+    this.status = status;
+  }
+}
+
 interface ApiRequestOptions extends Omit<AxiosRequestConfig, "url" | "data" | "headers" | "auth"> {
   auth?: boolean;
   body?: unknown;
@@ -45,6 +55,11 @@ interface ApiRequestOptions extends Omit<AxiosRequestConfig, "url" | "data" | "h
 type ApiInternalConfig = InternalAxiosRequestConfig & {
   auth?: boolean;
 };
+
+function shouldInvalidateSession(config?: ApiInternalConfig) {
+  const url = config?.url ?? "";
+  return /\/api\/auth\/me(?:\?|$)/.test(url);
+}
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -70,19 +85,19 @@ apiClient.interceptors.request.use((config: ApiInternalConfig) => {
 apiClient.interceptors.response.use(
   (response) => response,
   (error: AxiosError<{ message?: string }>) => {
+    const status = error.response?.status;
     const backendMessage = error.response?.data?.message || error.message || "Request failed.";
     const normalizedMessage =
       /invalid input syntax for type uuid|invalid input syntax for type bigint|invalid input syntax for type integer/i.test(backendMessage)
         ? "Your session or request data is out of sync. Please try again."
         : backendMessage;
 
-    if (error.response?.status === 401) {
+    if (status === 401 && shouldInvalidateSession(error.config as ApiInternalConfig | undefined)) {
       appStore.logout();
-      return Promise.reject(new Error(normalizedMessage || "Your session has expired."));
     }
 
     return Promise.reject(
-      new Error(normalizedMessage),
+      new ApiRequestError(normalizedMessage || "Request failed.", status),
     );
   },
 );

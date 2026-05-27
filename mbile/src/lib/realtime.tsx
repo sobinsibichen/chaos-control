@@ -1,7 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, useMemo } from "react";
 import { API_BASE_URL } from "@/lib/api";
-import { appStore, useAppStore } from "@/lib/app-store";
+import { useAppStore } from "@/lib/app-store";
 import { queryKeys } from "@/lib/query-keys";
 
 type RealtimeMessage =
@@ -187,10 +187,6 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
         void queryClient.invalidateQueries({ queryKey: queryKeys.cravingLive });
         void queryClient.invalidateQueries({ queryKey: queryKeys.voiceCommands });
         void queryClient.invalidateQueries({ queryKey: queryKeys.favoriteStores });
-      }
-
-      if (message.type === "error" && message.payload?.message?.toLowerCase().includes("session")) {
-        appStore.logout();
       }
     });
   }, [queryClient]);
