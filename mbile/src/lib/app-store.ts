@@ -198,6 +198,9 @@ function hydrate() {
 function setState(updater: AppState | ((current: AppState) => AppState)) {
   const nextState = typeof updater === "function" ? updater(state) : updater;
   state = nextState;
+  if (nextState.meta.hydrated) {
+    hydrated = true;
+  }
   persist(nextState);
   emit();
 }

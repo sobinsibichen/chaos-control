@@ -7,9 +7,11 @@ import {
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
+import { useEffect } from "react";
 import { Toaster } from "react-hot-toast";
 
 import appCss from "../styles.css?url";
+import { bootstrapAuth } from "@/lib/auth";
 import { RealtimeProvider } from "@/lib/realtime";
 
 function NotFoundComponent() {
@@ -124,6 +126,10 @@ function RootShell({ children }: { children: React.ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+
+  useEffect(() => {
+    void bootstrapAuth();
+  }, []);
 
   return (
     <QueryClientProvider client={queryClient}>

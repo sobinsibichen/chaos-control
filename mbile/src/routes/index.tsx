@@ -126,6 +126,8 @@ function ViewportPortal({ children }: { children: React.ReactNode }) {
 export function DashboardPage() {
   const queryClient = useQueryClient();
   const user = useAppStore((value) => value.auth.user);
+  const hydrated = useAppStore((value) => value.meta.hydrated);
+  const isAuthenticated = useAppStore((value) => value.auth.isAuthenticated);
   const [errorMessage, setErrorMessage] = useState("");
   const [smoking, setSmoking] = useState(false);
   const [quitStep, setQuitStep] = useState<0 | 1 | 2>(0);
@@ -137,12 +139,14 @@ export function DashboardPage() {
   const dashboardQuery = useQuery({
     queryKey: queryKeys.dashboard,
     queryFn: () => apiRequest<DashboardResponse>("/api/stats/dashboard"),
+    enabled: hydrated && isAuthenticated,
     refetchInterval: 60000,
   });
 
   const activityQuery = useQuery({
     queryKey: queryKeys.activity,
     queryFn: () => apiRequest<{ success: boolean; activity: ActivityRow[] }>("/api/activity/recent?limit=5"),
+    enabled: hydrated && isAuthenticated,
     refetchInterval: 60000,
   });
 
