@@ -26,6 +26,7 @@ import { GlassCard } from "@/components/lp/GlassCard";
 import { MentalStabilityChallenge } from "@/components/lp/damage/MentalStabilityChallenge";
 import { apiRequest } from "@/lib/api";
 import { appStore, useAppStore } from "@/lib/app-store";
+import { requireAuth } from "@/lib/route-guards";
 import {
   getInstalledApps,
   getNativeProtectionStatus,
@@ -39,6 +40,7 @@ import {
 } from "@/lib/native/mobile";
 
 export const Route = createFileRoute("/control")({
+  beforeLoad: requireAuth,
   head: () => ({ meta: [{ title: "Damage Control - Last Puff" }] }),
   component: ControlPage,
 });

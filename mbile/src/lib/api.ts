@@ -104,6 +104,7 @@ apiClient.interceptors.request.use((config: ApiInternalConfig) => {
     config.headers.delete("Authorization");
     if (shouldAttachAuth) {
       console.warn(`[api-debug] ${method} ${url} -> Authorization token missing`);
+      throw new ApiRequestError("Please sign in again to save blocked apps.", 401);
     }
   }
 
