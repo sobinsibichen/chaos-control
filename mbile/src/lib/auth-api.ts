@@ -19,6 +19,11 @@ export async function signupRequest(payload: { name: string; email: string; pass
     auth: false,
     body: JSON.stringify(payload),
   });
+  console.info("[auth-debug] signup response", {
+    success: data.success,
+    hasToken: Boolean(data.token),
+    hasUser: Boolean(data.user),
+  });
   if (!data.success || !data.user || !data.token) {
     throw new Error(data.message || "Authentication request failed.");
   }
@@ -30,6 +35,12 @@ export async function loginRequest(payload: { email: string; password: string })
     method: "POST",
     auth: false,
     body: JSON.stringify(payload),
+  });
+  console.info("[auth-debug] login response", {
+    success: data.success,
+    hasToken: Boolean(data.token),
+    hasUser: Boolean(data.user),
+    message: data.message,
   });
   if (!data.success || !data.user || !data.token) {
     throw new Error(data.message || "Authentication request failed.");

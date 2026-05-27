@@ -1,6 +1,7 @@
 const { WebSocketServer } = require("ws");
 const jwt = require("jsonwebtoken");
 const { URL } = require("url");
+const { getRequiredEnv } = require("../utils/env");
 
 const userConnections = new Map();
 let wss;
@@ -44,7 +45,7 @@ function initializeRealtime(server) {
         return;
       }
 
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      const decoded = jwt.verify(token, getRequiredEnv("JWT_SECRET"));
       socket.user = decoded;
       const userId = socket.user?.id;
       if (userId) {
@@ -52,6 +53,9 @@ function initializeRealtime(server) {
       }
       sendMessage(socket, { type: "ready", payload: { timestamp: new Date().toISOString() } });
     } catch (error) {
+      console.warn("Realtime auth failed", {
+        message: error.message,
+      });
       sendMessage(socket, { type: "error", payload: { message: "Invalid token." } });
       socket.close(4002, "Invalid token");
       return;

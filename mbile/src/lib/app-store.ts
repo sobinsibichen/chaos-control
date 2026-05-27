@@ -178,6 +178,11 @@ function hydrate() {
 
   const token = getStoredToken();
   const user = getStoredUser();
+  console.info("[auth-debug] hydrating session", {
+    hasToken: Boolean(token),
+    hasUser: Boolean(user),
+    userId: user?.id,
+  });
   state = {
     ...state,
     meta: {
@@ -237,6 +242,12 @@ export const appStore = {
       visibilityEnabled: payload.visibilityEnabled,
     };
     storeSession(payload.token, user);
+    console.info("[auth-debug] appStore.login", {
+      userId: payload.id,
+      email: payload.email,
+      rememberMe: payload.rememberMe,
+      tokenPreview: `${payload.token.slice(0, 12)}...`,
+    });
     setState((current) => ({
       ...current,
       meta: {
@@ -275,6 +286,7 @@ export const appStore = {
   },
   logout() {
     clearSession();
+    console.info("[auth-debug] appStore.logout");
     setState((current) => ({
       ...current,
       meta: {

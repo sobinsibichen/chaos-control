@@ -1,5 +1,6 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const { getRequiredEnv } = require("../utils/env");
 const {
   createUser,
   findUserByEmail,
@@ -8,7 +9,7 @@ const {
 const { ensureUserBootstrap } = require("../services/userDataService");
 
 const generateToken = (userId) =>
-  jwt.sign({ id: userId }, process.env.JWT_SECRET, { expiresIn: "7d" });
+  jwt.sign({ id: userId }, getRequiredEnv("JWT_SECRET"), { expiresIn: "7d" });
 
 const sanitizeUser = (user) => ({
   id: user.id,
@@ -61,7 +62,11 @@ const signup = async (req, res) => {
     await ensureUserBootstrap(user.id);
 
     const token = generateToken(user.id);
-    console.log("User created successfully with id:", user.id);
+    console.log("Signup success", {
+      userId: user.id,
+      email: normalizedEmail,
+      tokenGenerated: Boolean(token),
+    });
 
     return res.status(201).json({
       success: true,
@@ -120,6 +125,12 @@ const login = async (req, res) => {
 
     const token = generateToken(user.id);
     await ensureUserBootstrap(user.id);
+
+    console.log("Login success", {
+      userId: user.id,
+      email: normalizedEmail,
+      tokenGenerated: Boolean(token),
+    });
 
     return res.status(200).json({
       success: true,

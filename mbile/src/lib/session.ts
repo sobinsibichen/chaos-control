@@ -15,7 +15,12 @@ export function getStoredToken() {
     return null;
   }
 
-  return window.localStorage.getItem(TOKEN_KEY);
+  try {
+    return window.localStorage.getItem(TOKEN_KEY);
+  } catch (error) {
+    console.warn("[auth-debug] unable to read stored token", error);
+    return null;
+  }
 }
 
 export function getStoredUser(): SessionUser | null {
@@ -41,8 +46,17 @@ export function storeSession(token: string, user: SessionUser) {
     return;
   }
 
-  window.localStorage.setItem("token", token);
-  window.localStorage.setItem(USER_KEY, JSON.stringify(user));
+  try {
+    window.localStorage.setItem(TOKEN_KEY, token);
+    window.localStorage.setItem(USER_KEY, JSON.stringify(user));
+    console.info("[auth-debug] stored token and user", {
+      tokenPreview: `${token.slice(0, 12)}...`,
+      userId: user.id,
+      email: user.email,
+    });
+  } catch (error) {
+    console.warn("[auth-debug] unable to persist session", error);
+  }
 }
 
 export function clearSession() {
@@ -50,6 +64,11 @@ export function clearSession() {
     return;
   }
 
-  window.localStorage.removeItem(TOKEN_KEY);
-  window.localStorage.removeItem(USER_KEY);
+  try {
+    window.localStorage.removeItem(TOKEN_KEY);
+    window.localStorage.removeItem(USER_KEY);
+    console.info("[auth-debug] cleared stored session");
+  } catch (error) {
+    console.warn("[auth-debug] unable to clear session", error);
+  }
 }

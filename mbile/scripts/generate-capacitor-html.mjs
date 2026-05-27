@@ -10,7 +10,7 @@ const outputFile = path.join(rootDir, "dist", "client", "index.html");
 
 const moduleUrl = pathToFileURL(serverEntry).href;
 const mod = await import(moduleUrl);
-const response = await mod.default.fetch(new Request("http://localhost/"), {}, {});
+const response = await mod.default.fetch(new Request("https://chaos-control-api.onrender.com/"), {}, {});
 
 if (!response.ok) {
   throw new Error(`Unable to render mobile entry HTML. Status: ${response.status}`);

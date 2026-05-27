@@ -18,15 +18,20 @@ const authMiddleware = require("./middleware/authMiddleware");
 const { ensureSchema } = require("./services/schemaService");
 const { initializeRealtime } = require("./socket/realtime");
 const { normalizeDatabaseError } = require("./utils/http");
+const { getRequiredEnv } = require("./utils/env");
 
 const app = express();
 const port = process.env.PORT || 5000;
 const server = http.createServer(app);
+const allowedOrigins = (process.env.CORS_ORIGIN || "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 
 app.set("trust proxy", 1);
 app.use(
   cors({
-    origin: process.env.CORS_ORIGIN || true,
+    origin: allowedOrigins.length ? allowedOrigins : true,
     credentials: true,
   }),
 );
@@ -52,6 +57,21 @@ app.get("/api/test", (req, res) => {
     success: true,
     message: "Backend working",
   });
+});
+
+app.get("/api/health", async (req, res, next) => {
+  try {
+    const result = await pool.query("SELECT NOW() AS database_time");
+
+    res.status(200).json({
+      success: true,
+      status: "healthy",
+      uptimeSeconds: Math.round(process.uptime()),
+      databaseTime: result.rows[0].database_time,
+    });
+  } catch (error) {
+    next(error);
+  }
 });
 
 app.use("/api/auth", authRoutes);
@@ -85,6 +105,7 @@ app.use((error, req, res, next) => {
 
 const startServer = async () => {
   try {
+    getRequiredEnv("JWT_SECRET");
     await ensureSchema();
     await pool.query("SELECT 1");
 
@@ -103,6 +124,7 @@ const startServer = async () => {
 
     server.listen(port, () => {
       console.log(`Server running on port ${port}`);
+      console.log(`Health check available at /api/health`);
     });
   } catch (error) {
     console.error("Unable to start server:", error.message);

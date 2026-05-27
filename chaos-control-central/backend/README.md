@@ -29,7 +29,7 @@ Create or update `backend/.env` with your PostgreSQL credentials:
 ```env
 PORT=5000
 DB_USER=postgres
-DB_HOST=localhost
+DB_HOST=YOUR_DATABASE_HOST
 DB_NAME=last_puff
 DB_PASSWORD=YOUR_PASSWORD
 DB_PORT=5432

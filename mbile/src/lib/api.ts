@@ -1,31 +1,22 @@
-import axios, { AxiosError, type AxiosRequestConfig, type InternalAxiosRequestConfig } from "axios";
+import axios, {
+  AxiosError,
+  AxiosHeaders,
+  type AxiosRequestConfig,
+  type InternalAxiosRequestConfig,
+} from "axios";
 import { appStore } from "@/lib/app-store";
 import { getStoredToken } from "@/lib/session";
 
+const DEFAULT_API_BASE_URL = "https://chaos-control-api.onrender.com";
+
 function resolveApiBaseUrl() {
   const envBaseUrl = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL;
+  const runtimeOverride =
+    typeof window !== "undefined"
+      ? window.localStorage.getItem("last-puff-api-base-url")
+      : null;
 
-  if (envBaseUrl) {
-    return envBaseUrl.replace(/\/$/, "");
-  }
-
-  if (typeof window !== "undefined") {
-    const runtimeOverride = window.localStorage.getItem("last-puff-api-base-url");
-
-    if (runtimeOverride) {
-      return runtimeOverride.replace(/\/$/, "");
-    }
-
-    const { protocol, hostname } = window.location;
-
-    if (hostname === "localhost") {
-      return "http://10.0.2.2:5000";
-    }
-
-    return `${protocol}//${hostname}:5000`;
-  }
-
-  return "http://localhost:5000";
+  return (runtimeOverride || envBaseUrl || DEFAULT_API_BASE_URL).replace(/\/$/, "");
 }
 
 export const API_BASE_URL = resolveApiBaseUrl();
@@ -53,7 +44,7 @@ interface ApiRequestOptions extends Omit<AxiosRequestConfig, "url" | "data" | "h
 }
 
 type ApiInternalConfig = InternalAxiosRequestConfig & {
-  auth?: boolean;
+  skipAuth?: boolean;
 };
 
 function getAuthToken() {
@@ -73,8 +64,22 @@ function shouldDebugAuthRequest(url?: string) {
 }
 
 function shouldInvalidateSession(config?: ApiInternalConfig) {
-  const url = config?.url ?? "";
-  return /\/api\/auth\/me(?:\?|$)/.test(url);
+  return config?.skipAuth !== true;
+}
+
+function redactHeaders(headers?: Record<string, unknown>) {
+  if (!headers) {
+    return headers;
+  }
+
+  const next = { ...headers };
+  if (typeof next.Authorization === "string") {
+    next.Authorization = "Bearer [redacted]";
+  }
+  if (typeof next.authorization === "string") {
+    next.authorization = "Bearer [redacted]";
+  }
+  return next;
 }
 
 export const apiClient = axios.create({
@@ -86,21 +91,24 @@ export const apiClient = axios.create({
 });
 
 apiClient.interceptors.request.use((config: ApiInternalConfig) => {
-  const shouldAttachAuth = config.auth !== false;
+  config.headers = AxiosHeaders.from(config.headers ?? {});
+  const shouldAttachAuth = config.skipAuth !== true;
   const token = shouldAttachAuth ? getAuthToken() : null;
   const url = config.url ?? "";
   const method = (config.method ?? "get").toUpperCase();
 
   if (token) {
     config.headers.set("Authorization", `Bearer ${token}`);
-    if (shouldAttachAuth && shouldDebugAuthRequest(url)) {
-      console.info(`[auth-debug] attached token for ${method} ${url}`);
-    }
+    console.info(`[api-debug] ${method} ${url} -> Authorization attached`);
   } else {
     config.headers.delete("Authorization");
-    if (shouldAttachAuth && shouldDebugAuthRequest(url)) {
-      console.warn(`[auth-debug] missing token for ${method} ${url}`);
+    if (shouldAttachAuth) {
+      console.warn(`[api-debug] ${method} ${url} -> Authorization token missing`);
     }
+  }
+
+  if (shouldDebugAuthRequest(url)) {
+    console.info(`[api-debug] request headers for ${method} ${url}`, redactHeaders(config.headers.toJSON()));
   }
 
   return config;
@@ -111,15 +119,14 @@ apiClient.interceptors.response.use(
   (error: AxiosError<{ message?: string }>) => {
     const status = error.response?.status;
     const url = error.config?.url ?? "";
+    const method = ((error.config?.method ?? "get") as string).toUpperCase();
     const backendMessage = error.response?.data?.message || error.message || "Request failed.";
     const normalizedMessage =
       /invalid input syntax for type uuid|invalid input syntax for type bigint|invalid input syntax for type integer/i.test(backendMessage)
         ? "Your session or request data is out of sync. Please try again."
         : backendMessage;
 
-    if (shouldDebugAuthRequest(url)) {
-      console.warn(`[auth-debug] ${status ?? "ERR"} ${url} :: ${normalizedMessage}`);
-    }
+    console.warn(`[api-debug] ${status ?? "ERR"} ${method} ${url} :: ${normalizedMessage}`);
 
     if (status === 401 && shouldInvalidateSession(error.config as ApiInternalConfig | undefined)) {
       appStore.logout();
@@ -152,18 +159,9 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
   const { auth = true, body, method = "GET", headers = {}, ...rest } = options;
   const data = normalizeBody(body, headers);
   const nextHeaders = { ...headers };
-  const token = auth ? getAuthToken() : null;
 
   if (data !== undefined && !nextHeaders["Content-Type"] && !nextHeaders["content-type"]) {
     nextHeaders["Content-Type"] = "application/json";
-  }
-
-  if (auth) {
-    if (token) {
-      nextHeaders.Authorization = `Bearer ${token}`;
-    } else {
-      delete nextHeaders.Authorization;
-    }
   }
 
   const response = await apiClient.request<T>({
@@ -171,9 +169,9 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
     method,
     data,
     headers: nextHeaders,
-    auth,
+    skipAuth: !auth,
     ...rest,
-  });
+  } as ApiInternalConfig);
 
   return response.data;
 }

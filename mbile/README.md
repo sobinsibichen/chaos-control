@@ -10,7 +10,7 @@ This folder is the Android app wrapper for the existing `chaos-control-central` 
 
 ## Backend config
 
-Set `VITE_API_BASE_URL` before building if the backend is not reachable at the default address.
+Set `VITE_API_BASE_URL` before building if you want to override the bundled production backend URL.
 
 Example:
 
@@ -21,13 +21,13 @@ Copy-Item .env.example .env
 Then edit `.env` and point it to your backend, for example:
 
 ```env
-VITE_API_BASE_URL=http://192.168.1.10:5000
+VITE_API_BASE_URL=https://chaos-control-api.onrender.com
 ```
 
 Notes:
 
-- `10.0.2.2:5000` is used automatically for Android emulator builds
-- A real phone usually needs your computer's LAN IP, not `localhost`
+- The app defaults to `https://chaos-control-api.onrender.com`
+- Override the value only if you are testing against another backend
 
 ## Commands
 
