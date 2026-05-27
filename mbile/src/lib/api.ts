@@ -1,4 +1,4 @@
-import axios, { AxiosError, type AxiosRequestConfig } from "axios";
+import axios, { AxiosError, type AxiosRequestConfig, type InternalAxiosRequestConfig } from "axios";
 import { appStore } from "@/lib/app-store";
 import { getStoredToken } from "@/lib/session";
 
@@ -42,29 +42,28 @@ interface ApiRequestOptions extends Omit<AxiosRequestConfig, "url" | "data" | "h
   headers?: Record<string, string>;
 }
 
-const SKIP_AUTH_HEADER = "X-Skip-Auth";
+type ApiInternalConfig = InternalAxiosRequestConfig & {
+  auth?: boolean;
+};
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
   timeout: 15000,
+  headers: {
+    "Content-Type": "application/json",
+  },
 });
 
-apiClient.interceptors.request.use((config) => {
-  const nextHeaders = config.headers ?? {};
-  const shouldSkipAuth = nextHeaders[SKIP_AUTH_HEADER] === "true";
+apiClient.interceptors.request.use((config: ApiInternalConfig) => {
+  const shouldAttachAuth = config.auth !== false;
+  const token = shouldAttachAuth ? getStoredToken() : null;
 
-  if (shouldSkipAuth) {
-    delete nextHeaders[SKIP_AUTH_HEADER];
-    config.headers = nextHeaders;
-    return config;
-  }
-
-  const token = getStoredToken();
   if (token) {
-    nextHeaders.Authorization = `Bearer ${token}`;
+    config.headers.set("Authorization", `Bearer ${token}`);
+  } else {
+    config.headers.delete("Authorization");
   }
 
-  config.headers = nextHeaders;
   return config;
 });
 
@@ -114,15 +113,12 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
     nextHeaders["Content-Type"] = "application/json";
   }
 
-  if (!auth) {
-    nextHeaders[SKIP_AUTH_HEADER] = "true";
-  }
-
   const response = await apiClient.request<T>({
     url: path,
     method,
     data,
     headers: nextHeaders,
+    auth,
     ...rest,
   });
 
