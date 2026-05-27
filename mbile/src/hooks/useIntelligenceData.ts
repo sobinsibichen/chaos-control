@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/api";
+import { useAppStore } from "@/lib/app-store";
 import { createCravingPrediction, fetchLiveCravingPrediction, listCravingPredictions, type CravingPredictionRecord } from "@/lib/cravingApi";
 import { createSmokeDna, listSmokeDna, listVoiceCommands } from "@/lib/intelligenceApi";
 import { buildHeatmap, buildHourlyCravingData, buildWeeklyReplay, resolveSmokingProfile, type ActivityRow, type DashboardPayload, type RoastAnalyticsPayload } from "@/lib/intelligence";
@@ -22,6 +23,9 @@ function buildPredictionSeries(prediction: CravingPredictionRecord | undefined) 
 
 export function useIntelligenceData() {
   const queryClient = useQueryClient();
+  const hydrated = useAppStore((state) => state.meta.hydrated);
+  const isAuthenticated = useAppStore((state) => state.auth.isAuthenticated);
+  const queriesEnabled = hydrated && isAuthenticated;
   const smokeDnaBootstrappedRef = useRef(false);
   const cravingBootstrappedRef = useRef(false);
   const now = new Date();
@@ -31,55 +35,65 @@ export function useIntelligenceData() {
   const dashboardQuery = useQuery({
     queryKey: queryKeys.dashboard,
     queryFn: () => apiRequest<{ success: boolean } & DashboardPayload>("/api/stats/dashboard"),
+    enabled: queriesEnabled,
     refetchInterval: 60000,
   });
 
   const analyticsQuery = useQuery({
     queryKey: queryKeys.analytics,
     queryFn: () => apiRequest<{ success: boolean; analytics: RoastAnalyticsPayload }>("/api/analytics/roast"),
+    enabled: queriesEnabled,
     refetchInterval: 60000,
   });
 
   const activityQuery = useQuery({
     queryKey: queryKeys.activity,
     queryFn: () => apiRequest<{ success: boolean; activity: ActivityRow[] }>("/api/activity/recent?limit=12"),
+    enabled: queriesEnabled,
     refetchInterval: 60000,
   });
 
   const smokeDnaQuery = useQuery({
     queryKey: queryKeys.smokeDna,
     queryFn: () => listSmokeDna(6),
+    enabled: queriesEnabled,
   });
 
   const replayHistoryQuery = useQuery({
     queryKey: queryKeys.smokeReplayHistory,
     queryFn: () => listSmokeReplay(8),
+    enabled: queriesEnabled,
   });
 
   const monthlyReplayQuery = useQuery({
     queryKey: queryKeys.smokeReplayMonthly(currentYear, currentMonth),
     queryFn: () => fetchMonthlyReplay(currentYear, currentMonth),
+    enabled: queriesEnabled,
   });
 
   const yearlyReplayQuery = useQuery({
     queryKey: queryKeys.smokeReplayYearly(currentYear),
     queryFn: () => fetchYearlyReplay(currentYear),
+    enabled: queriesEnabled,
   });
 
   const cravingHistoryQuery = useQuery({
     queryKey: queryKeys.cravingHistory,
     queryFn: () => listCravingPredictions(12),
+    enabled: queriesEnabled,
   });
 
   const liveCravingQuery = useQuery({
     queryKey: queryKeys.cravingLive,
     queryFn: fetchLiveCravingPrediction,
+    enabled: queriesEnabled,
     refetchInterval: 60000,
   });
 
   const voiceQuery = useQuery({
     queryKey: queryKeys.voiceCommands,
     queryFn: () => listVoiceCommands(20),
+    enabled: queriesEnabled,
   });
 
   const createSmokeDnaMutation = useMutation({
@@ -98,7 +112,7 @@ export function useIntelligenceData() {
   });
 
   useEffect(() => {
-    if (!dashboardQuery.data || !analyticsQuery.data?.analytics) {
+    if (!queriesEnabled || !dashboardQuery.data || !analyticsQuery.data?.analytics) {
       return;
     }
     if (smokeDnaBootstrappedRef.current || smokeDnaQuery.isLoading || createSmokeDnaMutation.isPending) {
@@ -108,10 +122,10 @@ export function useIntelligenceData() {
       smokeDnaBootstrappedRef.current = true;
       createSmokeDnaMutation.mutate();
     }
-  }, [analyticsQuery.data?.analytics, createSmokeDnaMutation, dashboardQuery.data, smokeDnaQuery.data?.items.length, smokeDnaQuery.isLoading]);
+  }, [analyticsQuery.data?.analytics, createSmokeDnaMutation, dashboardQuery.data, queriesEnabled, smokeDnaQuery.data?.items.length, smokeDnaQuery.isLoading]);
 
   useEffect(() => {
-    if (!dashboardQuery.data || liveCravingQuery.isLoading || createCravingMutation.isPending) {
+    if (!queriesEnabled || !dashboardQuery.data || liveCravingQuery.isLoading || createCravingMutation.isPending) {
       return;
     }
     if (cravingBootstrappedRef.current) {
@@ -121,7 +135,7 @@ export function useIntelligenceData() {
       cravingBootstrappedRef.current = true;
       createCravingMutation.mutate();
     }
-  }, [createCravingMutation, cravingHistoryQuery.data?.length, dashboardQuery.data, liveCravingQuery.isLoading]);
+  }, [createCravingMutation, cravingHistoryQuery.data?.length, dashboardQuery.data, liveCravingQuery.isLoading, queriesEnabled]);
 
   const dashboard = dashboardQuery.data;
   const analytics = analyticsQuery.data?.analytics;
@@ -169,6 +183,7 @@ export function useIntelligenceData() {
     hourlyCraving,
     weeklyReplay,
     replayHeatmap,
+    isReady: queriesEnabled,
     isLoading:
       dashboardQuery.isLoading ||
       analyticsQuery.isLoading ||

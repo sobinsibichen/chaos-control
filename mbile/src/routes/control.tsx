@@ -143,6 +143,8 @@ function isNativePluginUnavailable(error: unknown) {
 }
 
 function ControlPage() {
+  const hydrated = useAppStore((state) => state.meta.hydrated);
+  const isAuthenticated = useAppStore((state) => state.auth.isAuthenticated);
   const unlockedApps = useAppStore((state) => state.damage.unlockedApps);
   const unlockFailures = useAppStore((state) => state.damage.unlockFailures);
   const [challengeOpen, setChallengeOpen] = useState(false);
@@ -187,6 +189,10 @@ function ControlPage() {
   }, []);
 
   useEffect(() => {
+    if (!hydrated || !isAuthenticated) {
+      return;
+    }
+
     const loadApps = async () => {
       setLoading(true);
       setErrorMessage("");
@@ -228,10 +234,10 @@ function ControlPage() {
     };
 
     void loadApps();
-  }, []);
+  }, [hydrated, isAuthenticated]);
 
   useEffect(() => {
-    if (!hasLoadedRef.current) {
+    if (!hydrated || !isAuthenticated || !hasLoadedRef.current) {
       return;
     }
 
@@ -256,10 +262,10 @@ function ControlPage() {
     }, 500);
 
     return () => window.clearTimeout(timeout);
-  }, [blockTime]);
+  }, [blockTime, hydrated, isAuthenticated]);
 
   useEffect(() => {
-    if (!isNativeAndroid() || !hasLoadedRef.current) {
+    if (!hydrated || !isAuthenticated || !isNativeAndroid() || !hasLoadedRef.current) {
       return;
     }
 
@@ -298,7 +304,7 @@ function ControlPage() {
     void sync().catch((error: unknown) => {
       setErrorMessage(error instanceof Error ? error.message : "Unable to sync native protection settings.");
     });
-  }, [apps, blockTime]);
+  }, [apps, blockTime, hydrated, isAuthenticated]);
 
   const selectedAppsCount = apps.filter((item) => item.is_active).length;
 

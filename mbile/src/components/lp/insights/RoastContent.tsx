@@ -5,6 +5,7 @@ import { AnimatedNumber } from "@/components/lp/AnimatedNumber";
 import { GlassCard } from "@/components/lp/GlassCard";
 import { TopRegretCard } from "@/components/lp/analytics/TopRegretCard";
 import { apiRequest } from "@/lib/api";
+import { useAppStore } from "@/lib/app-store";
 import { queryKeys } from "@/lib/query-keys";
 
 interface AnalyticsPayload {
@@ -28,9 +29,14 @@ interface AnalyticsPayload {
 }
 
 export function RoastContent() {
+  const hydrated = useAppStore((state) => state.meta.hydrated);
+  const isAuthenticated = useAppStore((state) => state.auth.isAuthenticated);
+  const queriesEnabled = hydrated && isAuthenticated;
+
   const analyticsQuery = useQuery({
     queryKey: queryKeys.analytics,
     queryFn: () => apiRequest<{ success: boolean; analytics: AnalyticsPayload }>("/api/analytics/roast"),
+    enabled: queriesEnabled,
     refetchInterval: 60000,
   });
 
@@ -38,6 +44,7 @@ export function RoastContent() {
     queryKey: queryKeys.highlights,
     queryFn: () =>
       apiRequest<{ success: boolean; highlights: AnalyticsPayload & { blockedLogs: Array<{ id: number; app_name: string; message: string | null }> } }>("/api/analytics/highlights"),
+    enabled: queriesEnabled,
     refetchInterval: 60000,
   });
 
