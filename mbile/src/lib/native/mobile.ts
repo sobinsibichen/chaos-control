@@ -17,32 +17,59 @@ interface ProtectionPlugin {
     blockTime?: string;
     blockHour?: number;
     blockMinute?: number;
+    blockEndHour?: number;
+    blockEndMinute?: number;
     enabled?: boolean;
     repeatType?: string;
   }): Promise<NativeProtectionStatus>;
-  pickBlockTime(): Promise<{ hour: number; minute: number; timeLabel: string; blockHour: number; blockMinute: number }>;
+  pickBlockTime(): Promise<NativeBlockWindow>;
   getStatus(): Promise<NativeProtectionStatus>;
+  getDebugStatus(): Promise<NativeProtectionStatus>;
   unlockForToday(): Promise<NativeProtectionStatus>;
   relock(): Promise<NativeProtectionStatus>;
   openAccessibilitySettings(): Promise<void>;
+  openOverlaySettings(): Promise<void>;
+  openUsageAccessSettings(): Promise<void>;
   requestIgnoreBatteryOptimizations(): Promise<NativeProtectionStatus>;
 }
 
 export interface NativeProtectionStatus {
   accessibilityEnabled: boolean;
   accessibilityActive: boolean;
+  overlayPermissionGranted: boolean;
+  usageAccessGranted: boolean;
   blockTime: string;
   blockHour: number;
   blockMinute: number;
+  blockEndHour: number;
+  blockEndMinute: number;
   blockedAppsCount: number;
   monitoringActive: boolean;
+  serviceRunning: boolean;
   scheduleActive: boolean;
+  blockingActive: boolean;
   batteryOptimizationIgnored: boolean;
   withinBlockedWindow: boolean;
   unlockedForToday: boolean;
   nextAlarmAt?: number;
   foregroundPackage?: string;
   protectionActive?: boolean;
+  lastBlockedApp?: string;
+  lastOverlayTriggerTime?: number;
+  overlayVisible?: boolean;
+  blockWindowLabel?: string;
+}
+
+export interface NativeBlockWindow {
+  hour: number;
+  minute: number;
+  blockHour: number;
+  blockMinute: number;
+  blockEndHour: number;
+  blockEndMinute: number;
+  startLabel: string;
+  endLabel: string;
+  timeLabel: string;
 }
 
 const InstalledApps = registerPlugin<InstalledAppsPlugin>("InstalledApps");
@@ -82,6 +109,8 @@ export async function syncNativeProtectionConfig(options: {
   blockTime: string;
   blockHour?: number;
   blockMinute?: number;
+  blockEndHour?: number;
+  blockEndMinute?: number;
 }) {
   if (!isNativeAndroid()) {
     return null;
@@ -106,6 +135,14 @@ export async function getNativeProtectionStatus() {
   return Protection.getStatus();
 }
 
+export async function getNativeDebugStatus() {
+  if (!isNativeAndroid()) {
+    return null;
+  }
+
+  return Protection.getDebugStatus();
+}
+
 export async function unlockNativeProtectionForToday() {
   if (!isNativeAndroid()) {
     return null;
@@ -128,6 +165,22 @@ export async function openNativeAccessibilitySettings() {
   }
 
   await Protection.openAccessibilitySettings();
+}
+
+export async function openNativeOverlaySettings() {
+  if (!isNativeAndroid()) {
+    return;
+  }
+
+  await Protection.openOverlaySettings();
+}
+
+export async function openNativeUsageAccessSettings() {
+  if (!isNativeAndroid()) {
+    return;
+  }
+
+  await Protection.openUsageAccessSettings();
 }
 
 export async function requestNativeBatteryOptimizationExemption() {

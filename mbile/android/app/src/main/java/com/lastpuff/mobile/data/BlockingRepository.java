@@ -11,6 +11,8 @@ public final class BlockingRepository {
     private static final String PREFS_NAME = "last_puff_protection";
     private static final String KEY_BLOCK_HOUR = "block_hour";
     private static final String KEY_BLOCK_MINUTE = "block_minute";
+    private static final String KEY_BLOCK_END_HOUR = "block_end_hour";
+    private static final String KEY_BLOCK_END_MINUTE = "block_end_minute";
     private static final String KEY_BLOCKED_APPS_JSON = "blocked_apps_json";
     private static final String KEY_REPEAT_TYPE = "repeat_type";
     private static final String KEY_ENABLED = "enabled";
@@ -23,6 +25,10 @@ public final class BlockingRepository {
     private static final String KEY_LAST_HEARTBEAT_AT = "last_heartbeat_at";
     private static final String KEY_ACCESSIBILITY_HEARTBEAT_AT = "accessibility_heartbeat_at";
     private static final String KEY_FOREGROUND_PACKAGE = "foreground_package";
+    private static final String KEY_SERVICE_RUNNING = "service_running";
+    private static final String KEY_LAST_BLOCKED_PACKAGE = "last_blocked_package";
+    private static final String KEY_LAST_OVERLAY_TRIGGER_AT = "last_overlay_trigger_at";
+    private static final String KEY_OVERLAY_VISIBLE = "overlay_visible";
     private static volatile BlockingDatabase database;
 
     private BlockingRepository() {
@@ -74,6 +80,10 @@ public final class BlockingRepository {
     }
 
     public static void saveSchedule(Context context, JSONArray apps, int blockHour, int blockMinute, String repeatType, boolean enabled) {
+        saveSchedule(context, apps, blockHour, blockMinute, blockHour, blockMinute, repeatType, enabled);
+    }
+
+    public static void saveSchedule(Context context, JSONArray apps, int blockHour, int blockMinute, int blockEndHour, int blockEndMinute, String repeatType, boolean enabled) {
         BlockingScheduleEntity schedule = getSchedule(context);
         schedule.blockHour = blockHour;
         schedule.blockMinute = blockMinute;
@@ -91,6 +101,8 @@ public final class BlockingRepository {
             .edit()
             .putInt(KEY_BLOCK_HOUR, blockHour)
             .putInt(KEY_BLOCK_MINUTE, blockMinute)
+            .putInt(KEY_BLOCK_END_HOUR, blockEndHour)
+            .putInt(KEY_BLOCK_END_MINUTE, blockEndMinute)
             .putString(KEY_BLOCKED_APPS_JSON, schedule.blockedAppsJson)
             .putString(KEY_REPEAT_TYPE, schedule.repeatType)
             .putBoolean(KEY_ENABLED, enabled)
@@ -119,8 +131,8 @@ public final class BlockingRepository {
             .putBoolean(KEY_MONITORING_ACTIVE, active)
             .putLong(KEY_LAST_HEARTBEAT_AT, now)
             .putString(KEY_FOREGROUND_PACKAGE, foregroundPackage == null ? "" : foregroundPackage)
+            .putBoolean(KEY_SERVICE_RUNNING, active)
             .apply();
-        database(context).blockingScheduleDao().updateMonitoringState(now, active, foregroundPackage == null ? "" : foregroundPackage, now);
     }
 
     public static void setAccessibilityState(Context context, boolean active) {
@@ -129,7 +141,42 @@ public final class BlockingRepository {
             .edit()
             .putLong(KEY_ACCESSIBILITY_HEARTBEAT_AT, now)
             .apply();
-        database(context).blockingScheduleDao().updateAccessibilityState(now, now);
+    }
+
+    public static void setServiceRunning(Context context, boolean running) {
+        prefs(context)
+            .edit()
+            .putBoolean(KEY_SERVICE_RUNNING, running)
+            .apply();
+    }
+
+    public static void setForegroundPackage(Context context, String foregroundPackage) {
+        String safePackage = foregroundPackage == null ? "" : foregroundPackage;
+        prefs(context)
+            .edit()
+            .putString(KEY_FOREGROUND_PACKAGE, safePackage)
+            .apply();
+    }
+
+    public static void setOverlayVisible(Context context, boolean visible) {
+        prefs(context)
+            .edit()
+            .putBoolean(KEY_OVERLAY_VISIBLE, visible)
+            .apply();
+    }
+
+    public static void setLastBlockedPackage(Context context, String packageName) {
+        prefs(context)
+            .edit()
+            .putString(KEY_LAST_BLOCKED_PACKAGE, packageName == null ? "" : packageName)
+            .apply();
+    }
+
+    public static void setLastOverlayTriggerAt(Context context, long timestamp) {
+        prefs(context)
+            .edit()
+            .putLong(KEY_LAST_OVERLAY_TRIGGER_AT, timestamp)
+            .apply();
     }
 
     public static void setAlarmState(Context context, long nextAlarmAt, boolean active) {
@@ -161,8 +208,20 @@ public final class BlockingRepository {
         return prefs(context).getInt(KEY_BLOCK_MINUTE, 0);
     }
 
+    public static int getBlockEndHour(Context context) {
+        return prefs(context).getInt(KEY_BLOCK_END_HOUR, getBlockHour(context));
+    }
+
+    public static int getBlockEndMinute(Context context) {
+        return prefs(context).getInt(KEY_BLOCK_END_MINUTE, getBlockMinute(context));
+    }
+
     public static String getBlockTimeLabel(Context context) {
         return formatTime(getBlockHour(context), getBlockMinute(context));
+    }
+
+    public static String getBlockWindowLabel(Context context) {
+        return getBlockTimeLabel(context) + " - " + formatTime(getBlockEndHour(context), getBlockEndMinute(context));
     }
 
     public static boolean isUnlockedForToday(Context context) {
@@ -187,6 +246,22 @@ public final class BlockingRepository {
 
     public static String getForegroundPackage(Context context) {
         return prefs(context).getString(KEY_FOREGROUND_PACKAGE, "");
+    }
+
+    public static boolean isServiceRunning(Context context) {
+        return prefs(context).getBoolean(KEY_SERVICE_RUNNING, false);
+    }
+
+    public static boolean isOverlayVisible(Context context) {
+        return prefs(context).getBoolean(KEY_OVERLAY_VISIBLE, false);
+    }
+
+    public static String getLastBlockedPackage(Context context) {
+        return prefs(context).getString(KEY_LAST_BLOCKED_PACKAGE, "");
+    }
+
+    public static long getLastOverlayTriggerAt(Context context) {
+        return prefs(context).getLong(KEY_LAST_OVERLAY_TRIGGER_AT, 0L);
     }
 
     public static String formatTime(int hour, int minute) {

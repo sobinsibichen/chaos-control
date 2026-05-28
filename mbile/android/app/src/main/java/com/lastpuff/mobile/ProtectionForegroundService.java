@@ -1,48 +1,53 @@
 package com.lastpuff.mobile;
 
+import android.app.AlarmManager;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Intent;
-import android.os.Build;
 import android.content.pm.ServiceInfo;
+import android.os.Build;
 import android.os.IBinder;
 import android.util.Log;
 
 import androidx.core.app.NotificationCompat;
 
-/**
- * Foreground service that keeps app protection running even when the main app is minimized or closed.
- * Shows a persistent notification to maintain service priority.
- */
+import com.lastpuff.mobile.data.BlockingRepository;
+
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+
 public class ProtectionForegroundService extends Service {
-    private static final String TAG = "LASTPUFF_PROTECTION";
-    private static final int NOTIFICATION_ID = 1;
-    private static final String NOTIFICATION_CHANNEL_ID = "lastpuff_protection";
+    private static final String TAG = "BLOCKER";
+    private static final int NOTIFICATION_ID = 901;
+    private static final String CHANNEL_ID = "last_puff_blocking";
+    private static final long LOOP_INTERVAL_MS = 400L;
+    private static final long BLOCK_DEBOUNCE_MS = 850L;
+
+    private final ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
+    private volatile boolean started;
+    private volatile String lastForegroundPackage = "";
+    private volatile String lastBlockedPackage = "";
+    private volatile long lastBlockedAt = 0L;
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+        createNotificationChannel();
+    }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        try {
-            Log.i(TAG, "ProtectionForegroundService started");
-
-            createNotificationChannel();
-
-            Notification notification = buildNotification();
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
-            } else {
-                startForeground(NOTIFICATION_ID, notification);
-            }
-
-            return START_STICKY;
-        } catch (Exception e) {
-            Log.e(TAG, "ProtectionForegroundService failed to start", e);
-            stopSelf();
-            return START_NOT_STICKY;
+        startInForeground();
+        if (!started) {
+            started = true;
+            executor.scheduleAtFixedRate(this::tick, 0L, LOOP_INTERVAL_MS, TimeUnit.MILLISECONDS);
         }
+        BlockingRepository.setServiceRunning(this, true);
+        return START_STICKY;
     }
 
     @Override
@@ -52,62 +57,123 @@ public class ProtectionForegroundService extends Service {
 
     @Override
     public void onDestroy() {
-        Log.w(TAG, "ProtectionForegroundService destroyed");
+        BlockingRepository.setServiceRunning(this, false);
+        executor.shutdownNow();
+        restartSelf();
         super.onDestroy();
     }
 
-    private void createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationChannel channel = new NotificationChannel(
-                NOTIFICATION_CHANNEL_ID,
-                "Last Puff Protection",
-                NotificationManager.IMPORTANCE_LOW
-            );
-            channel.setDescription("Monitoring protected apps");
-            channel.enableLights(false);
-            channel.enableVibration(false);
-            channel.setSound(null, null);
+    @Override
+    public void onTaskRemoved(Intent rootIntent) {
+        super.onTaskRemoved(rootIntent);
+        restartSelf();
+    }
 
-            NotificationManager manager = getSystemService(NotificationManager.class);
-            if (manager != null) {
-                manager.createNotificationChannel(channel);
-                Log.d(TAG, "Notification channel created");
+    private void tick() {
+        try {
+            String foregroundPackage = BlockingEngine.resolveForegroundPackage(this);
+            if (foregroundPackage == null) {
+                foregroundPackage = "";
             }
+
+            lastForegroundPackage = foregroundPackage;
+            BlockingEngine.markMonitoringHeartbeat(this, foregroundPackage);
+            BlockingRepository.setForegroundPackage(this, foregroundPackage);
+
+            if (BlockingEngine.shouldBlockPackage(this, foregroundPackage)) {
+                long now = System.currentTimeMillis();
+                String lastBlockedPackage = BlockingRepository.getLastBlockedPackage(this);
+                if (!BlockingRepository.isOverlayVisible(this) || !foregroundPackage.equals(lastBlockedPackage)) {
+                    if (foregroundPackage.equals(this.lastBlockedPackage) && now - lastBlockedAt < BLOCK_DEBOUNCE_MS) {
+                        return;
+                    }
+                    BlockingEngine.launchBlockScreen(this, foregroundPackage, "foreground-service");
+                    this.lastBlockedPackage = foregroundPackage;
+                    this.lastBlockedAt = now;
+                } else {
+                    BlockOverlayManager.getInstance(this).refreshOverlay();
+                }
+            } else if (BlockingRepository.isOverlayVisible(this)) {
+                BlockOverlayManager.getInstance(this).hideOverlay();
+            }
+        } catch (Exception error) {
+            Log.e(TAG, "Monitoring tick failed", error);
+        }
+    }
+
+    private void startInForeground() {
+        Notification notification = buildNotification();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+        } else {
+            startForeground(NOTIFICATION_ID, notification);
         }
     }
 
     private Notification buildNotification() {
+        Intent launchIntent = new Intent(this, MainActivity.class);
+        launchIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        PendingIntent pendingIntent = PendingIntent.getActivity(
+            this,
+            0,
+            launchIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+        );
+
+        String blockWindow = BlockingEngine.getBlockWindowLabel(this);
+        String status = BlockingEngine.isWithinBlockedWindow(this) ? "Blocking active" : "Watching schedule";
+
+        return new NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle("Last Puff protection running")
+            .setContentText(blockWindow + " • " + status)
+            .setContentIntent(pendingIntent)
+            .setOngoing(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setSilent(true)
+            .build();
+    }
+
+    private void createNotificationChannel() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            return;
+        }
+
+        NotificationChannel channel = new NotificationChannel(
+            CHANNEL_ID,
+            getString(R.string.blocking_channel_name),
+            NotificationManager.IMPORTANCE_LOW
+        );
+        channel.setDescription(getString(R.string.blocking_channel_description));
+        channel.enableLights(false);
+        channel.enableVibration(false);
+        NotificationManager notificationManager = getSystemService(NotificationManager.class);
+        if (notificationManager != null) {
+            notificationManager.createNotificationChannel(channel);
+        }
+    }
+
+    private void restartSelf() {
         try {
-            Intent mainIntent = new Intent(this, MainActivity.class);
-            mainIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-            PendingIntent pendingIntent = PendingIntent.getActivity(this, 0, mainIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+            Intent restartIntent = new Intent(this, ProtectionForegroundService.class);
+            PendingIntent pendingIntent = PendingIntent.getService(
+                this,
+                901,
+                restartIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+            );
 
-            String blockTime = ProtectionPreferences.getBlockTime(this);
-            int blockedCount = ProtectionPreferences.getBlockedApps(this).length();
-            String status = "Protected";
-            if (ProtectionPreferences.isUnlockedForToday(this)) {
-                status = "Unlocked";
-            } else if (!ProtectionPreferences.isWithinBlockedWindow(this)) {
-                status = "Waiting";
+            AlarmManager alarmManager = (AlarmManager) getSystemService(ALARM_SERVICE);
+            if (alarmManager != null) {
+                long triggerAt = System.currentTimeMillis() + 1000L;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent);
+                } else {
+                    alarmManager.setExact(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent);
+                }
             }
-
-            return new NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
-                .setContentTitle("Last Puff Protection Active")
-                .setContentText("Block time: " + blockTime + " • " + blockedCount + " apps • " + status)
-                .setSmallIcon(R.drawable.ic_launcher_foreground)
-                .setContentIntent(pendingIntent)
-                .setOngoing(true)
-                .setPriority(NotificationCompat.PRIORITY_LOW)
-                .setVibrate(new long[]{0})
-                .build();
-        } catch (Exception e) {
-            Log.e(TAG, "Error building notification", e);
-            return new NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
-                .setContentTitle("Last Puff Protection")
-                .setSmallIcon(R.drawable.ic_launcher_foreground)
-                .setOngoing(true)
-                .build();
+        } catch (Exception error) {
+            Log.e(TAG, "Unable to restart protection service", error);
         }
     }
 }

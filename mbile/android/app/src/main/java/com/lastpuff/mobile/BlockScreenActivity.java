@@ -10,16 +10,15 @@ import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.TextView;
 
-import com.lastpuff.mobile.data.BlockingRepository;
-
 public class BlockScreenActivity extends Activity {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private TextView countdownView;
+
     private final Runnable countdownTicker = new Runnable() {
         @Override
         public void run() {
             if (countdownView != null) {
-                countdownView.setText(formatCountdown(BlockingEngine.getCountdownMillis()));
+                countdownView.setText(BlockingEngine.getCountdownLabel(BlockScreenActivity.this));
             }
             handler.postDelayed(this, 1000L);
         }
@@ -53,9 +52,9 @@ public class BlockScreenActivity extends Activity {
 
         title.setText(appName + " is blocked");
         body.setText(getString(R.string.block_screen_quote));
-        String schedule = "Schedule " + BlockingRepository.getBlockTimeLabel(this) + " • " + (reason == null ? "protection active" : reason);
+        String schedule = "Schedule " + BlockingEngine.getBlockWindowLabel(this) + " • " + (reason == null ? "protection active" : reason);
         hint.setText(schedule + (packageName == null ? "" : " • " + packageName));
-        countdownView.setText(formatCountdown(BlockingEngine.getCountdownMillis()));
+        countdownView.setText(BlockingEngine.getCountdownLabel(this));
 
         openLastPuff.setOnClickListener(view -> {
             Intent launch = getPackageManager().getLaunchIntentForPackage(getPackageName());
@@ -101,13 +100,5 @@ public class BlockScreenActivity extends Activity {
             return true;
         }
         return super.dispatchKeyEvent(event);
-    }
-
-    private String formatCountdown(long millis) {
-        long seconds = Math.max(0L, millis / 1000L);
-        long hours = seconds / 3600L;
-        long minutes = (seconds % 3600L) / 60L;
-        long remainingSeconds = seconds % 60L;
-        return String.format("Unlocks in %02d:%02d:%02d", hours, minutes, remainingSeconds);
     }
 }

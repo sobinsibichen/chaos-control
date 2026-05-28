@@ -80,12 +80,6 @@
             android:foregroundServiceType="microphone" />
 
         <service
-            android:name=".services.AppBlockMonitoringService"
-            android:enabled="true"
-            android:exported="false"
-            android:foregroundServiceType="dataSync" />
-
-        <service
             android:name=".ProtectionForegroundService"
             android:enabled="true"
             android:exported="false"

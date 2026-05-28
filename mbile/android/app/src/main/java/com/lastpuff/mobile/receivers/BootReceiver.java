@@ -6,7 +6,6 @@ import android.content.Intent;
 import android.util.Log;
 
 import com.lastpuff.mobile.BlockingEngine;
-import com.lastpuff.mobile.ProtectionWorkScheduler;
 
 public class BootReceiver extends BroadcastReceiver {
     private static final String TAG = "BLOCKER";
@@ -23,7 +22,6 @@ public class BootReceiver extends BroadcastReceiver {
             || "com.htc.intent.action.QUICKBOOT_POWERON".equals(action)) {
             Log.d(TAG, "Boot completed");
             BlockingEngine.syncProtection(context);
-            ProtectionWorkScheduler.schedule(context);
         }
     }
 }

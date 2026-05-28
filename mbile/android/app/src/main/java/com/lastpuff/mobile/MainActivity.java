@@ -1,6 +1,5 @@
 package com.lastpuff.mobile;
 
-import android.content.Intent;
 import android.os.Bundle;
 import android.util.Log;
 
@@ -18,7 +17,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(VoiceAssistantPlugin.class);
 
         super.onCreate(savedInstanceState);
-        ProtectionWorkScheduler.schedule(this);
+        BlockingEngine.syncProtection(this);
     }
 
     @Override

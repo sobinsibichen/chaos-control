@@ -1,8 +1,6 @@
 package com.lastpuff.mobile.services;
 
 import android.accessibilityservice.AccessibilityService;
-import android.content.Intent;
-import android.os.SystemClock;
 import android.util.Log;
 import android.view.accessibility.AccessibilityEvent;
 
@@ -26,29 +24,28 @@ public class BlockAccessibilityService extends AccessibilityService {
             return;
         }
 
-        BlockingEngine.markAccessibilityConnected(this);
-        BlockingRepository.setAccessibilityState(this, true);
-
-        Log.d(TAG, "Foreground app: " + packageName);
-        if (!BlockingEngine.shouldBlockPackage(this, packageName)) {
+        if (event.getEventType() != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+            && event.getEventType() != AccessibilityEvent.TYPE_WINDOWS_CHANGED) {
             return;
         }
 
-        long now = SystemClock.elapsedRealtime();
+        BlockingEngine.markAccessibilityConnected(this);
+        BlockingRepository.setAccessibilityState(this, true);
+        BlockingRepository.setMonitoringState(this, true, packageName);
+        BlockingRepository.setServiceRunning(this, true);
+        BlockingRepository.setForegroundPackage(this, packageName);
+
+        long now = System.currentTimeMillis();
         if (packageName.equals(lastBlockedPackage) && now - lastBlockedAt < BLOCK_DEBOUNCE_MS) {
             return;
         }
 
-        lastBlockedPackage = packageName;
-        lastBlockedAt = now;
-        Log.d(TAG, "Launching block screen");
+        if (BlockingEngine.shouldBlockPackage(this, packageName)) {
+            lastBlockedPackage = packageName;
+            lastBlockedAt = now;
+        }
 
-        Intent intent = new Intent(this, com.lastpuff.mobile.BlockScreenActivity.class);
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS);
-        intent.putExtra("packageName", packageName);
-        intent.putExtra("appName", BlockingEngine.resolveAppName(this, packageName));
-        intent.putExtra("reason", "accessibility");
-        startActivity(intent);
+        BlockingEngine.maybeBlockForegroundPackage(this, packageName, "accessibility");
     }
 
     @Override
@@ -62,6 +59,7 @@ public class BlockAccessibilityService extends AccessibilityService {
         super.onServiceConnected();
         BlockingEngine.markAccessibilityConnected(this);
         BlockingRepository.setAccessibilityState(this, true);
+        BlockingRepository.setServiceRunning(this, true);
         Log.d(TAG, "Accessibility connected");
     }
 

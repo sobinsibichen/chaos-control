@@ -32,6 +32,8 @@ import {
   getNativeProtectionStatus,
   isNativeAndroid,
   openNativeAccessibilitySettings,
+  openNativeOverlaySettings,
+  openNativeUsageAccessSettings,
   pickNativeBlockTime,
   relockNativeProtection,
   requestNativeBatteryOptimizationExemption,
@@ -94,8 +96,63 @@ interface CatalogApp {
 const fallbackAppIcon: keyof typeof iconMap = "LayoutGrid";
 const CONTROL_CACHE_KEY = "last-puff-control-cache";
 
-function formatBlockTime(hour: number, minute: number) {
+function formatTime24(hour: number, minute: number) {
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+function formatDisplayTime(hour: number, minute: number) {
+  const date = new Date();
+  date.setHours(hour, minute, 0, 0);
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function formatBlockWindow(startHour: number, startMinute: number, endHour: number, endMinute: number) {
+  return `${formatDisplayTime(startHour, startMinute)} → ${formatDisplayTime(endHour, endMinute)}`;
+}
+
+function parseBlockWindow(blockTime?: string | null) {
+  if (!blockTime) {
+    return null;
+  }
+
+  const normalized = blockTime.replace(/to|→/gi, "-");
+  const [startRaw, endRaw] = normalized.split("-");
+  const [startHourText, startMinuteText] = (startRaw ?? "").trim().split(":");
+  const startHour = Number.parseInt(startHourText ?? "", 10);
+  const startMinute = Number.parseInt(startMinuteText ?? "", 10);
+  if ([startHour, startMinute].some((value) => Number.isNaN(value))) {
+    return null;
+  }
+
+  if (!endRaw) {
+    return {
+      startHour,
+      startMinute,
+      endHour: defaultEndHour(startHour, startMinute),
+      endMinute: defaultEndMinute(startMinute),
+    };
+  }
+
+  const [endHourText, endMinuteText] = endRaw.trim().split(":");
+  const endHour = Number.parseInt(endHourText ?? "", 10);
+  const endMinute = Number.parseInt(endMinuteText ?? "", 10);
+
+  if ([endHour, endMinute].some((value) => Number.isNaN(value))) {
+    return null;
+  }
+
+  return { startHour, startMinute, endHour, endMinute };
+}
+
+function defaultEndHour(startHour: number, startMinute: number) {
+  return (startHour + Math.floor((startMinute + 60) / 60)) % 24;
+}
+
+function defaultEndMinute(startMinute: number) {
+  return (startMinute + 60) % 60;
 }
 
 function inferAppPresentation(appName: string, packageName: string) {
@@ -155,6 +212,8 @@ function ControlPage() {
   const deferredSearch = useDeferredValue(searchValue);
   const [blockHour, setBlockHour] = useState(22);
   const [blockMinute, setBlockMinute] = useState(0);
+  const [blockEndHour, setBlockEndHour] = useState(23);
+  const [blockEndMinute, setBlockEndMinute] = useState(0);
   const [apps, setApps] = useState<AppItem[]>([]);
   const [draftSelectedPackages, setDraftSelectedPackages] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -168,7 +227,7 @@ function ControlPage() {
   const installedAppsLoadedRef = useRef(false);
   const lastScheduleSyncRef = useRef("");
   const lastNativeSyncRef = useRef("");
-  const blockTime = formatBlockTime(blockHour, blockMinute);
+  const blockTime = formatBlockWindow(blockHour, blockMinute, blockEndHour, blockEndMinute);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -180,20 +239,34 @@ function ControlPage() {
       if (!raw) {
         return;
       }
-      const parsed = JSON.parse(raw) as { apps?: AppItem[]; blockTime?: string; blockHour?: number; blockMinute?: number };
+      const parsed = JSON.parse(raw) as {
+        apps?: AppItem[];
+        blockTime?: string;
+        blockHour?: number;
+        blockMinute?: number;
+        blockEndHour?: number;
+        blockEndMinute?: number;
+      };
       if (parsed.apps?.length) {
         setApps(parsed.apps);
       }
       if (typeof parsed.blockHour === "number" && typeof parsed.blockMinute === "number") {
         setBlockHour(parsed.blockHour);
         setBlockMinute(parsed.blockMinute);
+        if (typeof parsed.blockEndHour === "number" && typeof parsed.blockEndMinute === "number") {
+          setBlockEndHour(parsed.blockEndHour);
+          setBlockEndMinute(parsed.blockEndMinute);
+        } else {
+          setBlockEndHour(defaultEndHour(parsed.blockHour, parsed.blockMinute));
+          setBlockEndMinute(defaultEndMinute(parsed.blockMinute));
+        }
       } else if (parsed.blockTime) {
-        const [hourText, minuteText] = parsed.blockTime.split(":");
-        const parsedHour = Number.parseInt(hourText ?? "22", 10);
-        const parsedMinute = Number.parseInt(minuteText ?? "0", 10);
-        if (!Number.isNaN(parsedHour) && !Number.isNaN(parsedMinute)) {
-          setBlockHour(parsedHour);
-          setBlockMinute(parsedMinute);
+        const parsedWindow = parseBlockWindow(parsed.blockTime);
+        if (parsedWindow) {
+          setBlockHour(parsedWindow.startHour);
+          setBlockMinute(parsedWindow.startMinute);
+          setBlockEndHour(parsedWindow.endHour);
+          setBlockEndMinute(parsedWindow.endMinute);
         }
       }
     } catch {
@@ -217,12 +290,12 @@ function ControlPage() {
           }>("/api/apps");
           setApps(response.apps);
         if (response.schedule?.block_time) {
-          const [hourText, minuteText] = response.schedule.block_time.slice(0, 5).split(":");
-          const parsedHour = Number.parseInt(hourText ?? "22", 10);
-          const parsedMinute = Number.parseInt(minuteText ?? "0", 10);
-          if (!Number.isNaN(parsedHour) && !Number.isNaN(parsedMinute)) {
-            setBlockHour(parsedHour);
-            setBlockMinute(parsedMinute);
+          const parsedWindow = parseBlockWindow(response.schedule.block_time);
+          if (parsedWindow) {
+            setBlockHour(parsedWindow.startHour);
+            setBlockMinute(parsedWindow.startMinute);
+            setBlockEndHour(parsedWindow.endHour);
+            setBlockEndMinute(parsedWindow.endMinute);
           }
         }
         if (isNativeAndroid()) {
@@ -251,7 +324,7 @@ function ControlPage() {
       return;
     }
 
-    const scheduleKey = `${blockHour}:${blockMinute}`;
+    const scheduleKey = `${blockHour}:${blockMinute}:${blockEndHour}:${blockEndMinute}`;
     if (lastScheduleSyncRef.current === scheduleKey) {
       return;
     }
@@ -261,7 +334,7 @@ function ControlPage() {
         setSavingSchedule(true);
         await apiRequest("/api/apps/schedule", {
           method: "POST",
-          body: JSON.stringify({ blockTime, frequency: "daily", enabled: true }),
+          body: JSON.stringify({ blockTime: `${formatTime24(blockHour, blockMinute)}-${formatTime24(blockEndHour, blockEndMinute)}`, frequency: "daily", enabled: true }),
         });
         if (isNativeAndroid()) {
           try {
@@ -271,9 +344,11 @@ function ControlPage() {
                 packageName: app.package_name || app.app_name,
                 isActive: app.is_active,
               })),
-              blockTime,
+              blockTime: `${formatTime24(blockHour, blockMinute)}-${formatTime24(blockEndHour, blockEndMinute)}`,
               blockHour,
               blockMinute,
+              blockEndHour,
+              blockEndMinute,
               enabled: true,
               repeatType: "daily",
             });
@@ -293,7 +368,7 @@ function ControlPage() {
     }, 500);
 
     return () => window.clearTimeout(timeout);
-  }, [apps, blockHour, blockMinute, blockTime, hydrated, isAuthenticated]);
+  }, [apps, blockEndHour, blockEndMinute, blockHour, blockMinute, blockTime, hydrated, isAuthenticated]);
 
   useEffect(() => {
     if (!hydrated || !isAuthenticated || !isNativeAndroid() || !hasLoadedRef.current) {
@@ -309,6 +384,8 @@ function ControlPage() {
       blockTime,
       blockHour,
       blockMinute,
+      blockEndHour,
+      blockEndMinute,
     });
     if (lastNativeSyncRef.current === syncKey) {
       return;
@@ -322,9 +399,11 @@ function ControlPage() {
             packageName: app.package_name || app.app_name,
             isActive: app.is_active,
           })),
-          blockTime,
+          blockTime: `${formatTime24(blockHour, blockMinute)}-${formatTime24(blockEndHour, blockEndMinute)}`,
           blockHour,
           blockMinute,
+          blockEndHour,
+          blockEndMinute,
           enabled: true,
           repeatType: "daily",
         });
@@ -341,7 +420,7 @@ function ControlPage() {
     void sync().catch((error: unknown) => {
       setErrorMessage(error instanceof Error ? error.message : "Unable to sync native protection settings.");
     });
-  }, [apps, blockHour, blockMinute, blockTime, hydrated, isAuthenticated]);
+  }, [apps, blockEndHour, blockEndMinute, blockHour, blockMinute, blockTime, hydrated, isAuthenticated]);
 
   const selectedAppsCount = apps.filter((item) => item.is_active).length;
 
@@ -406,9 +485,11 @@ function ControlPage() {
         blockTime,
         blockHour,
         blockMinute,
+        blockEndHour,
+        blockEndMinute,
       }),
     );
-  }, [apps, blockHour, blockMinute, blockTime]);
+  }, [apps, blockEndHour, blockEndMinute, blockHour, blockMinute, blockTime]);
 
   const openPicker = () => {
     const loadInstalledApps = async () => {
@@ -591,6 +672,61 @@ function ControlPage() {
               </button>
             </div>
           ) : null}
+
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            <div className="rounded-2xl border border-foreground/10 bg-card p-3 shadow-sm">
+              <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Overlay</div>
+              <div className="mt-2 text-lg font-semibold text-foreground">{nativeProtectionStatus?.overlayPermissionGranted ? "Granted" : "Needed"}</div>
+            </div>
+            <div className="rounded-2xl border border-foreground/10 bg-card p-3 shadow-sm">
+              <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Usage Access</div>
+              <div className="mt-2 text-lg font-semibold text-foreground">{nativeProtectionStatus?.usageAccessGranted ? "Granted" : "Needed"}</div>
+            </div>
+            <div className="rounded-2xl border border-foreground/10 bg-card p-3 shadow-sm">
+              <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Service</div>
+              <div className="mt-2 text-lg font-semibold text-foreground">{nativeProtectionStatus?.serviceRunning ? "Running" : "Stopped"}</div>
+            </div>
+            <div className="rounded-2xl border border-foreground/10 bg-card p-3 shadow-sm">
+              <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Window</div>
+              <div className="mt-2 text-lg font-semibold text-foreground">{nativeProtectionStatus?.blockWindowLabel ?? blockTime}</div>
+            </div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            <button
+              onClick={() => void openNativeOverlaySettings()}
+              className="rounded-2xl border border-foreground/10 bg-background px-4 py-3 text-xs font-semibold text-foreground shadow-sm"
+            >
+              Overlay Settings
+            </button>
+            <button
+              onClick={() => void openNativeUsageAccessSettings()}
+              className="rounded-2xl border border-foreground/10 bg-background px-4 py-3 text-xs font-semibold text-foreground shadow-sm"
+            >
+              Usage Access
+            </button>
+            <button
+              onClick={() => void openNativeAccessibilitySettings()}
+              className="rounded-2xl border border-foreground/10 bg-background px-4 py-3 text-xs font-semibold text-foreground shadow-sm"
+            >
+              Accessibility
+            </button>
+            <button
+              onClick={() => void requestNativeBatteryOptimizationExemption().then(setNativeProtectionStatus).catch(() => {})}
+              className="rounded-2xl border border-foreground/10 bg-background px-4 py-3 text-xs font-semibold text-foreground shadow-sm"
+            >
+              Battery Exemption
+            </button>
+          </div>
+
+          <details className="mt-4 rounded-2xl border border-foreground/10 bg-background p-4 shadow-sm">
+            <summary className="cursor-pointer text-sm font-semibold text-foreground">OEM setup hints</summary>
+            <div className="mt-3 space-y-2 text-xs text-muted-foreground">
+              <p>Samsung: allow Last Puff in battery, background, and auto-start settings.</p>
+              <p>Xiaomi: enable Autostart and remove battery restrictions.</p>
+              <p>Oppo, Vivo, Realme, OnePlus: allow startup, background activity, and lock the app in recents if available.</p>
+            </div>
+          </details>
         </GlassCard>
       ) : null}
 
@@ -621,6 +757,8 @@ function ControlPage() {
                         }
                         setBlockHour(result.blockHour ?? result.hour);
                         setBlockMinute(result.blockMinute ?? result.minute);
+                        setBlockEndHour(result.blockEndHour ?? result.blockHour ?? result.hour);
+                        setBlockEndMinute(result.blockEndMinute ?? result.minute);
                       })
                       .catch((error: unknown) => {
                         setErrorMessage(error instanceof Error ? error.message : "Unable to open the time picker.");
@@ -628,17 +766,17 @@ function ControlPage() {
                     return;
                   }
 
-                  const nextValue = window.prompt("Enter block time in HH:MM", blockTime);
+                  const nextValue = window.prompt("Enter block window as HH:MM-HH:MM", `${formatTime24(blockHour, blockMinute)}-${formatTime24(blockEndHour, blockEndMinute)}`);
                   if (!nextValue) {
                     return;
                   }
 
-                  const [hourText, minuteText] = nextValue.split(":");
-                  const nextHour = Number.parseInt(hourText ?? "22", 10);
-                  const nextMinute = Number.parseInt(minuteText ?? "0", 10);
-                  if (!Number.isNaN(nextHour) && !Number.isNaN(nextMinute)) {
-                    setBlockHour(nextHour);
-                    setBlockMinute(nextMinute);
+                  const parsedWindow = parseBlockWindow(nextValue);
+                  if (parsedWindow) {
+                    setBlockHour(parsedWindow.startHour);
+                    setBlockMinute(parsedWindow.startMinute);
+                    setBlockEndHour(parsedWindow.endHour);
+                    setBlockEndMinute(parsedWindow.endMinute);
                   }
                 }}
                 className="h-12 w-full rounded-2xl border border-foreground/10 bg-background px-4 text-left text-sm font-semibold text-foreground shadow-sm"

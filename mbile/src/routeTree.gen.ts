@@ -17,6 +17,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as IntelligenceRouteImport } from './routes/intelligence'
 import { Route as InsightsRouteImport } from './routes/insights'
 import { Route as HomeRouteImport } from './routes/home'
+import { Route as DebugRouteImport } from './routes/debug'
 import { Route as DamageRouteImport } from './routes/damage'
 import { Route as ControlRouteImport } from './routes/control'
 import { Route as AnalyticsRouteImport } from './routes/analytics'
@@ -62,6 +63,11 @@ const HomeRoute = HomeRouteImport.update({
   path: '/home',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DebugRoute = DebugRouteImport.update({
+  id: '/debug',
+  path: '/debug',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DamageRoute = DamageRouteImport.update({
   id: '/damage',
   path: '/damage',
@@ -88,6 +94,7 @@ export interface FileRoutesByFullPath {
   '/analytics': typeof AnalyticsRoute
   '/control': typeof ControlRoute
   '/damage': typeof DamageRoute
+  '/debug': typeof DebugRoute
   '/home': typeof HomeRoute
   '/insights': typeof InsightsRoute
   '/intelligence': typeof IntelligenceRoute
@@ -102,6 +109,7 @@ export interface FileRoutesByTo {
   '/analytics': typeof AnalyticsRoute
   '/control': typeof ControlRoute
   '/damage': typeof DamageRoute
+  '/debug': typeof DebugRoute
   '/home': typeof HomeRoute
   '/insights': typeof InsightsRoute
   '/intelligence': typeof IntelligenceRoute
@@ -117,6 +125,7 @@ export interface FileRoutesById {
   '/analytics': typeof AnalyticsRoute
   '/control': typeof ControlRoute
   '/damage': typeof DamageRoute
+  '/debug': typeof DebugRoute
   '/home': typeof HomeRoute
   '/insights': typeof InsightsRoute
   '/intelligence': typeof IntelligenceRoute
@@ -133,6 +142,7 @@ export interface FileRouteTypes {
     | '/analytics'
     | '/control'
     | '/damage'
+    | '/debug'
     | '/home'
     | '/insights'
     | '/intelligence'
@@ -147,6 +157,7 @@ export interface FileRouteTypes {
     | '/analytics'
     | '/control'
     | '/damage'
+    | '/debug'
     | '/home'
     | '/insights'
     | '/intelligence'
@@ -161,6 +172,7 @@ export interface FileRouteTypes {
     | '/analytics'
     | '/control'
     | '/damage'
+    | '/debug'
     | '/home'
     | '/insights'
     | '/intelligence'
@@ -176,6 +188,7 @@ export interface RootRouteChildren {
   AnalyticsRoute: typeof AnalyticsRoute
   ControlRoute: typeof ControlRoute
   DamageRoute: typeof DamageRoute
+  DebugRoute: typeof DebugRoute
   HomeRoute: typeof HomeRoute
   InsightsRoute: typeof InsightsRoute
   IntelligenceRoute: typeof IntelligenceRoute
@@ -244,6 +257,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HomeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/debug': {
+      id: '/debug'
+      path: '/debug'
+      fullPath: '/debug'
+      preLoaderRoute: typeof DebugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/damage': {
       id: '/damage'
       path: '/damage'
@@ -280,6 +300,7 @@ const rootRouteChildren: RootRouteChildren = {
   AnalyticsRoute: AnalyticsRoute,
   ControlRoute: ControlRoute,
   DamageRoute: DamageRoute,
+  DebugRoute: DebugRoute,
   HomeRoute: HomeRoute,
   InsightsRoute: InsightsRoute,
   IntelligenceRoute: IntelligenceRoute,
