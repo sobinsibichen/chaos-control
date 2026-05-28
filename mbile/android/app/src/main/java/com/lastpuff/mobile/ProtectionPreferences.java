@@ -2,6 +2,7 @@ package com.lastpuff.mobile;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.util.Log;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -14,6 +15,7 @@ import java.util.Locale;
 import java.util.Map;
 
 public final class ProtectionPreferences {
+    private static final String TAG = "LASTPUFF_PROTECTION";
     private static final String PREFS_NAME = "last_puff_protection";
     private static final String KEY_BLOCK_TIME = "block_time";
     private static final String KEY_BLOCKED_APPS_JSON = "blocked_apps_json";
@@ -26,31 +28,40 @@ public final class ProtectionPreferences {
     }
 
     public static void saveConfig(Context context, JSONArray apps, String blockTime) {
+        Log.i(TAG, "Saving protection config - Block time: " + blockTime + ", Apps count: " + apps.length());
         prefs(context)
             .edit()
             .putString(KEY_BLOCKED_APPS_JSON, apps.toString())
             .putString(KEY_BLOCK_TIME, blockTime)
             .apply();
+        Log.d(TAG, "Config saved successfully");
     }
 
     public static JSONArray getBlockedApps(Context context) {
         String raw = prefs(context).getString(KEY_BLOCKED_APPS_JSON, "[]");
         try {
-            return new JSONArray(raw);
+            JSONArray apps = new JSONArray(raw);
+            Log.d(TAG, "Loaded " + apps.length() + " blocked apps");
+            return apps;
         } catch (JSONException error) {
+            Log.e(TAG, "Failed to parse blocked apps JSON", error);
             return new JSONArray();
         }
     }
 
     public static String getBlockTime(Context context) {
-        return prefs(context).getString(KEY_BLOCK_TIME, "22:00");
+        String blockTime = prefs(context).getString(KEY_BLOCK_TIME, "22:00");
+        Log.d(TAG, "Block time: " + blockTime);
+        return blockTime;
     }
 
     public static void unlockForToday(Context context) {
+        String token = todayToken();
         prefs(context)
             .edit()
-            .putString(KEY_UNLOCKED_FOR_DATE, todayToken())
+            .putString(KEY_UNLOCKED_FOR_DATE, token)
             .apply();
+        Log.i(TAG, "Unlocked for today: " + token);
     }
 
     public static void relock(Context context) {
@@ -58,17 +69,22 @@ public final class ProtectionPreferences {
             .edit()
             .remove(KEY_UNLOCKED_FOR_DATE)
             .apply();
+        Log.i(TAG, "Relocked apps");
     }
 
     public static boolean isUnlockedForToday(Context context) {
         String stored = prefs(context).getString(KEY_UNLOCKED_FOR_DATE, null);
-        return todayToken().equals(stored);
+        String today = todayToken();
+        boolean unlocked = today.equals(stored);
+        Log.d(TAG, "Unlock check - Stored: " + stored + ", Today: " + today + ", Unlocked: " + unlocked);
+        return unlocked;
     }
 
     public static boolean isWithinBlockedWindow(Context context) {
         String blockTime = getBlockTime(context);
         String[] pieces = blockTime.split(":");
         if (pieces.length != 2) {
+            Log.e(TAG, "Invalid block time format: " + blockTime);
             return false;
         }
 
@@ -78,6 +94,7 @@ public final class ProtectionPreferences {
             hour = Integer.parseInt(pieces[0]);
             minute = Integer.parseInt(pieces[1]);
         } catch (NumberFormatException error) {
+            Log.e(TAG, "Failed to parse block time: " + blockTime, error);
             return false;
         }
 
@@ -87,15 +104,27 @@ public final class ProtectionPreferences {
         int currentHour = Integer.parseInt(hourFormat.format(now));
         int currentMinute = Integer.parseInt(minuteFormat.format(now));
 
-        return currentHour * 60 + currentMinute >= hour * 60 + minute;
+        int currentTotalMinutes = currentHour * 60 + currentMinute;
+        int blockTotalMinutes = hour * 60 + minute;
+        boolean withinWindow = currentTotalMinutes >= blockTotalMinutes;
+        
+        Log.d(TAG, "Window check - Block time: " + blockTime + " (" + blockTotalMinutes + " min), Current: " + 
+                   String.format("%02d:%02d", currentHour, currentMinute) + " (" + currentTotalMinutes + " min), Within: " + withinWindow);
+        
+        return withinWindow;
     }
 
     public static boolean shouldBlockPackage(Context context, String packageName) {
         if (packageName == null || packageName.isEmpty()) {
+            Log.d(TAG, "Null or empty package name");
             return false;
         }
 
-        if (!isWithinBlockedWindow(context) || isUnlockedForToday(context)) {
+        boolean withinWindow = isWithinBlockedWindow(context);
+        boolean unlocked = isUnlockedForToday(context);
+        
+        if (!withinWindow || unlocked) {
+            Log.d(TAG, "No block for " + packageName + " - Within window: " + withinWindow + ", Unlocked: " + unlocked);
             return false;
         }
 
@@ -106,11 +135,14 @@ public final class ProtectionPreferences {
                 continue;
             }
 
-            if (packageName.equals(app.optString("packageName"))) {
+            String appPackage = app.optString("packageName");
+            if (packageName.equals(appPackage)) {
+                Log.i(TAG, "SHOULD BLOCK: " + packageName + " (matched in blocked list)");
                 return true;
             }
         }
 
+        Log.d(TAG, "Not in blocked list: " + packageName);
         return false;
     }
 
@@ -123,10 +155,13 @@ public final class ProtectionPreferences {
             }
 
             if (packageName.equals(app.optString("packageName"))) {
-                return app.optString("appName", packageName);
+                String appName = app.optString("appName", packageName);
+                Log.d(TAG, "App name for " + packageName + ": " + appName);
+                return appName;
             }
         }
 
+        Log.d(TAG, "App not found, returning package name: " + packageName);
         return packageName;
     }
 
@@ -136,6 +171,8 @@ public final class ProtectionPreferences {
         result.put("blockedAppsCount", getBlockedApps(context).length());
         result.put("withinBlockedWindow", isWithinBlockedWindow(context));
         result.put("unlockedForToday", isUnlockedForToday(context));
+        Log.d(TAG, "Status - Apps: " + result.get("blockedAppsCount") + ", Window: " + result.get("withinBlockedWindow") + 
+                   ", Unlocked: " + result.get("unlockedForToday"));
         return result;
     }
 

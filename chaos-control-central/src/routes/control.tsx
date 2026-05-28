@@ -24,6 +24,7 @@ import { createPortal } from "react-dom";
 import { AppShell } from "@/components/lp/AppShell";
 import { GlassCard } from "@/components/lp/GlassCard";
 import { MentalStabilityChallenge } from "@/components/lp/damage/MentalStabilityChallenge";
+import { TimePicker } from "@/components/lp/TimePicker";
 import { apiRequest } from "@/lib/api";
 import { appStore, useAppStore } from "@/lib/app-store";
 import { requireAuth } from "@/lib/route-guards";
@@ -90,12 +91,6 @@ interface CatalogApp {
 }
 
 const fallbackAppIcon: keyof typeof iconMap = "LayoutGrid";
-
-const halfHourOptions = Array.from({ length: 48 }, (_, index) => {
-  const hour = String(Math.floor(index / 2)).padStart(2, "0");
-  const minute = index % 2 === 0 ? "00" : "30";
-  return `${hour}:${minute}`;
-});
 
 function inferAppPresentation(appName: string, packageName: string) {
   const haystack = `${appName} ${packageName}`.toLowerCase();
@@ -454,17 +449,9 @@ function ControlPage() {
           <div className="rounded-2xl border border-foreground/10 bg-card p-4 shadow-sm">
             <div className="mb-2 text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Block Time</div>
             <div className="flex items-center gap-3">
-              <select
-                value={blockTime}
-                onChange={(event) => setBlockTime(event.target.value)}
-                className="w-full rounded-2xl border border-foreground/10 bg-background px-4 py-3 text-sm text-foreground outline-none"
-              >
-                {halfHourOptions.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
+              <div className="flex-1">
+                <TimePicker value={blockTime} onChange={setBlockTime} format="24h" disabled={savingSchedule} />
+              </div>
               <div className="rounded-2xl border border-foreground/10 bg-background px-4 py-3 text-sm font-semibold text-foreground">
                 Daily
               </div>
