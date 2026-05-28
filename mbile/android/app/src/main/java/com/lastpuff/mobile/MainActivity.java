@@ -18,6 +18,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(VoiceAssistantPlugin.class);
 
         super.onCreate(savedInstanceState);
+        ProtectionWorkScheduler.schedule(this);
     }
 
     @Override
@@ -26,13 +27,4 @@ public class MainActivity extends BridgeActivity {
         super.onResume();
     }
 
-    private void startProtectionService() {
-        try {
-            Intent serviceIntent = new Intent(this, ProtectionForegroundService.class);
-            startForegroundService(serviceIntent);
-            Log.d(TAG, "Protection foreground service started from MainActivity");
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to start protection service from MainActivity", e);
-        }
-    }
 }

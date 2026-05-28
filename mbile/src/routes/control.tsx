@@ -32,19 +32,14 @@ import {
   getNativeProtectionStatus,
   isNativeAndroid,
   openNativeAccessibilitySettings,
+  pickNativeBlockTime,
   relockNativeProtection,
+  requestNativeBatteryOptimizationExemption,
   syncNativeProtectionConfig,
   type NativeInstalledApp,
   type NativeProtectionStatus,
   unlockNativeProtectionForToday,
 } from "@/lib/native/mobile";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 
 export const Route = createFileRoute("/control")({
   beforeLoad: requireAuth,
@@ -99,11 +94,9 @@ interface CatalogApp {
 const fallbackAppIcon: keyof typeof iconMap = "LayoutGrid";
 const CONTROL_CACHE_KEY = "last-puff-control-cache";
 
-const minuteOptions = Array.from({ length: 24 * 60 }, (_, index) => {
-  const hour = String(Math.floor(index / 60)).padStart(2, "0");
-  const minute = String(index % 60).padStart(2, "0");
-  return `${hour}:${minute}`;
-});
+function formatBlockTime(hour: number, minute: number) {
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
 
 function inferAppPresentation(appName: string, packageName: string) {
   const haystack = `${appName} ${packageName}`.toLowerCase();
@@ -160,7 +153,8 @@ function ControlPage() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [searchValue, setSearchValue] = useState("");
   const deferredSearch = useDeferredValue(searchValue);
-  const [blockTime, setBlockTime] = useState("22:00");
+  const [blockHour, setBlockHour] = useState(22);
+  const [blockMinute, setBlockMinute] = useState(0);
   const [apps, setApps] = useState<AppItem[]>([]);
   const [draftSelectedPackages, setDraftSelectedPackages] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -174,6 +168,7 @@ function ControlPage() {
   const installedAppsLoadedRef = useRef(false);
   const lastScheduleSyncRef = useRef("");
   const lastNativeSyncRef = useRef("");
+  const blockTime = formatBlockTime(blockHour, blockMinute);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -185,12 +180,21 @@ function ControlPage() {
       if (!raw) {
         return;
       }
-      const parsed = JSON.parse(raw) as { apps?: AppItem[]; blockTime?: string };
+      const parsed = JSON.parse(raw) as { apps?: AppItem[]; blockTime?: string; blockHour?: number; blockMinute?: number };
       if (parsed.apps?.length) {
         setApps(parsed.apps);
       }
-      if (parsed.blockTime) {
-        setBlockTime(parsed.blockTime);
+      if (typeof parsed.blockHour === "number" && typeof parsed.blockMinute === "number") {
+        setBlockHour(parsed.blockHour);
+        setBlockMinute(parsed.blockMinute);
+      } else if (parsed.blockTime) {
+        const [hourText, minuteText] = parsed.blockTime.split(":");
+        const parsedHour = Number.parseInt(hourText ?? "22", 10);
+        const parsedMinute = Number.parseInt(minuteText ?? "0", 10);
+        if (!Number.isNaN(parsedHour) && !Number.isNaN(parsedMinute)) {
+          setBlockHour(parsedHour);
+          setBlockMinute(parsedMinute);
+        }
       }
     } catch {
       // Ignore stale cache and allow network bootstrap to refresh it.
@@ -203,26 +207,23 @@ function ControlPage() {
     }
 
     const loadApps = async () => {
-      setLoading(true);
-      setErrorMessage("");
-      try {
-        const response = await apiRequest<{
-          success: boolean;
-          apps: AppItem[];
-          schedule: { block_time: string } | null;
-        }>("/api/apps");
-        setApps(response.apps);
+        setLoading(true);
+        setErrorMessage("");
+        try {
+          const response = await apiRequest<{
+            success: boolean;
+            apps: AppItem[];
+            schedule: { block_time: string } | null;
+          }>("/api/apps");
+          setApps(response.apps);
         if (response.schedule?.block_time) {
-          setBlockTime(response.schedule.block_time.slice(0, 5));
-        }
-        if (typeof window !== "undefined") {
-          window.localStorage.setItem(
-            CONTROL_CACHE_KEY,
-            JSON.stringify({
-              apps: response.apps,
-              blockTime: response.schedule?.block_time?.slice(0, 5) ?? blockTime,
-            }),
-          );
+          const [hourText, minuteText] = response.schedule.block_time.slice(0, 5).split(":");
+          const parsedHour = Number.parseInt(hourText ?? "22", 10);
+          const parsedMinute = Number.parseInt(minuteText ?? "0", 10);
+          if (!Number.isNaN(parsedHour) && !Number.isNaN(parsedMinute)) {
+            setBlockHour(parsedHour);
+            setBlockMinute(parsedMinute);
+          }
         }
         if (isNativeAndroid()) {
           try {
@@ -250,7 +251,7 @@ function ControlPage() {
       return;
     }
 
-    const scheduleKey = `${blockTime}`;
+    const scheduleKey = `${blockHour}:${blockMinute}`;
     if (lastScheduleSyncRef.current === scheduleKey) {
       return;
     }
@@ -262,6 +263,27 @@ function ControlPage() {
           method: "POST",
           body: JSON.stringify({ blockTime, frequency: "daily", enabled: true }),
         });
+        if (isNativeAndroid()) {
+          try {
+            const status = await syncNativeProtectionConfig({
+              apps: apps.map((app) => ({
+                appName: app.app_name,
+                packageName: app.package_name || app.app_name,
+                isActive: app.is_active,
+              })),
+              blockTime,
+              blockHour,
+              blockMinute,
+              enabled: true,
+              repeatType: "daily",
+            });
+            setNativeProtectionStatus(status);
+          } catch (error) {
+            if (!isNativePluginUnavailable(error)) {
+              throw error;
+            }
+          }
+        }
         lastScheduleSyncRef.current = scheduleKey;
       } catch (error) {
         setErrorMessage(error instanceof Error ? error.message : "Unable to save schedule.");
@@ -271,7 +293,7 @@ function ControlPage() {
     }, 500);
 
     return () => window.clearTimeout(timeout);
-  }, [blockTime, hydrated, isAuthenticated]);
+  }, [apps, blockHour, blockMinute, blockTime, hydrated, isAuthenticated]);
 
   useEffect(() => {
     if (!hydrated || !isAuthenticated || !isNativeAndroid() || !hasLoadedRef.current) {
@@ -285,6 +307,8 @@ function ControlPage() {
         isActive: app.is_active,
       })),
       blockTime,
+      blockHour,
+      blockMinute,
     });
     if (lastNativeSyncRef.current === syncKey) {
       return;
@@ -299,6 +323,10 @@ function ControlPage() {
             isActive: app.is_active,
           })),
           blockTime,
+          blockHour,
+          blockMinute,
+          enabled: true,
+          repeatType: "daily",
         });
 
         setNativeProtectionStatus(status);
@@ -313,7 +341,7 @@ function ControlPage() {
     void sync().catch((error: unknown) => {
       setErrorMessage(error instanceof Error ? error.message : "Unable to sync native protection settings.");
     });
-  }, [apps, blockTime, hydrated, isAuthenticated]);
+  }, [apps, blockHour, blockMinute, blockTime, hydrated, isAuthenticated]);
 
   const selectedAppsCount = apps.filter((item) => item.is_active).length;
 
@@ -376,9 +404,11 @@ function ControlPage() {
       JSON.stringify({
         apps,
         blockTime,
+        blockHour,
+        blockMinute,
       }),
     );
-  }, [apps, blockTime]);
+  }, [apps, blockHour, blockMinute, blockTime]);
 
   const openPicker = () => {
     const loadInstalledApps = async () => {
@@ -510,12 +540,14 @@ function ControlPage() {
             <div>
               <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Android Protection</div>
               <div className="mt-1 text-lg font-semibold text-foreground">
-                {nativeProtectionStatus?.accessibilityEnabled ? "Accessibility enabled" : "Needs accessibility permission"}
+                {nativeProtectionStatus?.accessibilityActive ? "Protection Active" : nativeProtectionStatus?.accessibilityEnabled ? "Accessibility enabled" : "Accessibility Disabled"}
               </div>
               <div className="mt-1 text-xs text-muted-foreground">
-                {nativeProtectionStatus?.accessibilityEnabled
-                  ? "Selected apps will be intercepted after the scheduled time unless you unlock them for today."
-                  : "Turn on Android accessibility for Last Puff so selected apps can actually be blocked."}
+                {nativeProtectionStatus?.accessibilityActive
+                  ? "The blocker is listening for launches and foreground switches."
+                  : nativeProtectionStatus?.accessibilityEnabled
+                    ? "Accessibility is enabled, but the service has not reported active yet."
+                    : "Turn on Android accessibility for Last Puff so selected apps can actually be blocked."}
               </div>
             </div>
             <button
@@ -526,20 +558,39 @@ function ControlPage() {
             </button>
           </div>
 
-          <div className="mt-4 grid grid-cols-3 gap-3">
+          <div className="mt-4 grid grid-cols-4 gap-3">
             <div className="rounded-2xl border border-foreground/10 bg-card p-3 shadow-sm">
               <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Protected</div>
               <div className="mt-2 text-lg font-semibold text-foreground">{nativeProtectionStatus?.blockedAppsCount ?? selectedAppsCount}</div>
             </div>
             <div className="rounded-2xl border border-foreground/10 bg-card p-3 shadow-sm">
-              <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Window</div>
-              <div className="mt-2 text-lg font-semibold text-foreground">{nativeProtectionStatus?.withinBlockedWindow ? "Active" : "Waiting"}</div>
+              <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Schedule</div>
+              <div className="mt-2 text-lg font-semibold text-foreground">{nativeProtectionStatus?.scheduleActive ? "Active" : "Idle"}</div>
             </div>
             <div className="rounded-2xl border border-foreground/10 bg-card p-3 shadow-sm">
-              <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Unlock</div>
-              <div className="mt-2 text-lg font-semibold text-foreground">{nativeProtectionStatus?.unlockedForToday ? "Granted" : "Locked"}</div>
+              <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Monitoring</div>
+              <div className="mt-2 text-lg font-semibold text-foreground">{nativeProtectionStatus?.monitoringActive ? "Running" : "Stopped"}</div>
+            </div>
+            <div className="rounded-2xl border border-foreground/10 bg-card p-3 shadow-sm">
+              <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Battery</div>
+              <div className="mt-2 text-lg font-semibold text-foreground">{nativeProtectionStatus?.batteryOptimizationIgnored ? "Ignored" : "Needs Exemption"}</div>
             </div>
           </div>
+
+          {!nativeProtectionStatus?.batteryOptimizationIgnored ? (
+            <div className="mt-3 flex items-center justify-between rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+              <div>
+                <div className="text-sm font-semibold text-amber-950">Battery optimization is still enabled</div>
+                <div className="text-xs text-amber-900">Allow Last Puff to ignore optimization so the blocker survives battery saver modes.</div>
+              </div>
+              <button
+                onClick={() => void requestNativeBatteryOptimizationExemption().then(setNativeProtectionStatus).catch(() => {})}
+                className="rounded-full bg-amber-950 px-4 py-2 text-xs font-semibold text-white"
+              >
+                Allow
+              </button>
+            </div>
+          ) : null}
         </GlassCard>
       ) : null}
 
@@ -559,18 +610,41 @@ function ControlPage() {
           <div className="rounded-2xl border border-foreground/10 bg-card p-4 shadow-sm">
             <div className="mb-2 text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Block Time</div>
             <div className="flex items-center gap-3">
-              <Select value={blockTime} onValueChange={setBlockTime}>
-                <SelectTrigger className="h-12 w-full rounded-2xl border border-foreground/10 bg-background px-4 text-sm text-foreground shadow-sm">
-                  <SelectValue placeholder="Select time" />
-                </SelectTrigger>
-                <SelectContent className="max-h-72 rounded-2xl border border-foreground/10 bg-background text-foreground shadow-[0_20px_50px_rgba(15,23,42,0.18)]">
-                  {minuteOptions.map((option) => (
-                    <SelectItem key={option} value={option}>
-                      {option}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <motion.button
+                whileTap={{ scale: 0.98 }}
+                onClick={() => {
+                  if (isNativeAndroid()) {
+                    void pickNativeBlockTime()
+                      .then((result) => {
+                        if (!result) {
+                          return;
+                        }
+                        setBlockHour(result.blockHour ?? result.hour);
+                        setBlockMinute(result.blockMinute ?? result.minute);
+                      })
+                      .catch((error: unknown) => {
+                        setErrorMessage(error instanceof Error ? error.message : "Unable to open the time picker.");
+                      });
+                    return;
+                  }
+
+                  const nextValue = window.prompt("Enter block time in HH:MM", blockTime);
+                  if (!nextValue) {
+                    return;
+                  }
+
+                  const [hourText, minuteText] = nextValue.split(":");
+                  const nextHour = Number.parseInt(hourText ?? "22", 10);
+                  const nextMinute = Number.parseInt(minuteText ?? "0", 10);
+                  if (!Number.isNaN(nextHour) && !Number.isNaN(nextMinute)) {
+                    setBlockHour(nextHour);
+                    setBlockMinute(nextMinute);
+                  }
+                }}
+                className="h-12 w-full rounded-2xl border border-foreground/10 bg-background px-4 text-left text-sm font-semibold text-foreground shadow-sm"
+              >
+                {blockTime}
+              </motion.button>
               <div className="rounded-2xl border border-foreground/10 bg-background px-4 py-3 text-sm font-semibold text-foreground">
                 Daily
               </div>
