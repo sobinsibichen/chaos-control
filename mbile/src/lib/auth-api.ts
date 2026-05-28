@@ -1,4 +1,5 @@
 import { apiRequest } from "@/lib/api";
+import { AUTH_REQUEST_TIMEOUT_MS } from "@/lib/api";
 
 interface AuthResponse {
   success: boolean;
@@ -18,6 +19,7 @@ export async function signupRequest(payload: { name: string; email: string; pass
     method: "POST",
     auth: false,
     body: JSON.stringify(payload),
+    timeout: AUTH_REQUEST_TIMEOUT_MS,
   });
   console.info("[auth-debug] signup response", {
     success: data.success,
@@ -35,6 +37,7 @@ export async function loginRequest(payload: { email: string; password: string })
     method: "POST",
     auth: false,
     body: JSON.stringify(payload),
+    timeout: AUTH_REQUEST_TIMEOUT_MS,
   });
   console.info("[auth-debug] login response", {
     success: data.success,
@@ -49,7 +52,9 @@ export async function loginRequest(payload: { email: string; password: string })
 }
 
 export async function getCurrentUserRequest() {
-  const data = await apiRequest<{ success: boolean; user?: AuthResponse["user"]; message?: string }>("/api/auth/me");
+  const data = await apiRequest<{ success: boolean; user?: AuthResponse["user"]; message?: string }>("/api/auth/me", {
+    timeout: AUTH_REQUEST_TIMEOUT_MS,
+  });
   if (!data.success || !data.user) {
     throw new Error(data.message || "Unable to fetch current user.");
   }

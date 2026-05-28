@@ -38,6 +38,13 @@ import {
   type NativeProtectionStatus,
   unlockNativeProtectionForToday,
 } from "@/lib/native/mobile";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 export const Route = createFileRoute("/control")({
   beforeLoad: requireAuth,
@@ -92,9 +99,9 @@ interface CatalogApp {
 const fallbackAppIcon: keyof typeof iconMap = "LayoutGrid";
 const CONTROL_CACHE_KEY = "last-puff-control-cache";
 
-const halfHourOptions = Array.from({ length: 48 }, (_, index) => {
-  const hour = String(Math.floor(index / 2)).padStart(2, "0");
-  const minute = index % 2 === 0 ? "00" : "30";
+const minuteOptions = Array.from({ length: 24 * 60 }, (_, index) => {
+  const hour = String(Math.floor(index / 60)).padStart(2, "0");
+  const minute = String(index % 60).padStart(2, "0");
   return `${hour}:${minute}`;
 });
 
@@ -552,17 +559,18 @@ function ControlPage() {
           <div className="rounded-2xl border border-foreground/10 bg-card p-4 shadow-sm">
             <div className="mb-2 text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Block Time</div>
             <div className="flex items-center gap-3">
-              <select
-                value={blockTime}
-                onChange={(event) => setBlockTime(event.target.value)}
-                className="w-full rounded-2xl border border-foreground/10 bg-background px-4 py-3 text-sm text-foreground outline-none"
-              >
-                {halfHourOptions.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
+              <Select value={blockTime} onValueChange={setBlockTime}>
+                <SelectTrigger className="h-12 w-full rounded-2xl border border-foreground/10 bg-background px-4 text-sm text-foreground shadow-sm">
+                  <SelectValue placeholder="Select time" />
+                </SelectTrigger>
+                <SelectContent className="max-h-72 rounded-2xl border border-foreground/10 bg-background text-foreground shadow-[0_20px_50px_rgba(15,23,42,0.18)]">
+                  {minuteOptions.map((option) => (
+                    <SelectItem key={option} value={option}>
+                      {option}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <div className="rounded-2xl border border-foreground/10 bg-background px-4 py-3 text-sm font-semibold text-foreground">
                 Daily
               </div>

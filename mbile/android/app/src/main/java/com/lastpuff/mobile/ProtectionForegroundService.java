@@ -7,6 +7,7 @@ import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Intent;
 import android.os.Build;
+import android.content.pm.ServiceInfo;
 import android.os.IBinder;
 import android.util.Log;
 
@@ -23,19 +24,25 @@ public class ProtectionForegroundService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        Log.i(TAG, "ProtectionForegroundService started");
+        try {
+            Log.i(TAG, "ProtectionForegroundService started");
 
-        // Create notification channel for Android 8+
-        createNotificationChannel();
+            createNotificationChannel();
 
-        // Build persistent notification
-        Notification notification = buildNotification();
+            Notification notification = buildNotification();
 
-        // Start foreground service with notification
-        startForeground(NOTIFICATION_ID, notification);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+            } else {
+                startForeground(NOTIFICATION_ID, notification);
+            }
 
-        // Return sticky so service restarts if killed
-        return START_STICKY;
+            return START_STICKY;
+        } catch (Exception e) {
+            Log.e(TAG, "ProtectionForegroundService failed to start", e);
+            stopSelf();
+            return START_NOT_STICKY;
+        }
     }
 
     @Override

@@ -8,6 +8,8 @@ import { appStore } from "@/lib/app-store";
 import { getStoredToken } from "@/lib/session";
 
 const DEFAULT_API_BASE_URL = "https://chaos-control-api.onrender.com";
+const DEFAULT_REQUEST_TIMEOUT_MS = 15000;
+export const AUTH_REQUEST_TIMEOUT_MS = 45000;
 
 function resolveApiBaseUrl() {
   const envBaseUrl = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL;
@@ -41,6 +43,7 @@ interface ApiRequestOptions extends Omit<AxiosRequestConfig, "url" | "data" | "h
   auth?: boolean;
   body?: unknown;
   headers?: Record<string, string>;
+  timeout?: number;
 }
 
 type ApiInternalConfig = InternalAxiosRequestConfig & {
@@ -84,7 +87,7 @@ function redactHeaders(headers?: Record<string, unknown>) {
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 15000,
+  timeout: DEFAULT_REQUEST_TIMEOUT_MS,
   headers: {
     "Content-Type": "application/json",
   },
@@ -123,9 +126,11 @@ apiClient.interceptors.response.use(
     const method = ((error.config?.method ?? "get") as string).toUpperCase();
     const backendMessage = error.response?.data?.message || error.message || "Request failed.";
     const normalizedMessage =
-      /invalid input syntax for type uuid|invalid input syntax for type bigint|invalid input syntax for type integer/i.test(backendMessage)
-        ? "Your session or request data is out of sync. Please try again."
-        : backendMessage;
+      error.code === "ECONNABORTED" || /timeout/i.test(backendMessage)
+        ? "The server took too long to respond. Please try again in a moment."
+        : /invalid input syntax for type uuid|invalid input syntax for type bigint|invalid input syntax for type integer/i.test(backendMessage)
+          ? "Your session or request data is out of sync. Please try again."
+          : backendMessage;
 
     console.warn(`[api-debug] ${status ?? "ERR"} ${method} ${url} :: ${normalizedMessage}`);
 
@@ -157,7 +162,7 @@ function normalizeBody(body: unknown, headers: Record<string, string>) {
 }
 
 export async function apiRequest<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
-  const { auth = true, body, method = "GET", headers = {}, ...rest } = options;
+  const { auth = true, body, method = "GET", headers = {}, timeout, ...rest } = options;
   const data = normalizeBody(body, headers);
   const nextHeaders = { ...headers };
 
@@ -170,6 +175,7 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
     method,
     data,
     headers: nextHeaders,
+    timeout,
     skipAuth: !auth,
     ...rest,
   } as ApiInternalConfig);

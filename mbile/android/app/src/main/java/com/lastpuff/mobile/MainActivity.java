@@ -12,23 +12,18 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         Log.i(TAG, "MainActivity created");
-        
+
         registerPlugin(InstalledAppsPlugin.class);
         registerPlugin(ProtectionPlugin.class);
         registerPlugin(VoiceAssistantPlugin.class);
-        
+
         super.onCreate(savedInstanceState);
-        
-        // Start protection foreground service
-        startProtectionService();
     }
 
     @Override
-    protected void onResume() {
+    public void onResume() {
         Log.d(TAG, "MainActivity resumed");
         super.onResume();
-        // Ensure protection service is running
-        startProtectionService();
     }
 
     private void startProtectionService() {
