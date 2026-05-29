@@ -14,11 +14,11 @@ export const AUTH_REQUEST_TIMEOUT_MS = 45000;
 function resolveApiBaseUrl() {
   const envBaseUrl = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL;
   const runtimeOverride =
-    typeof window !== "undefined"
+    import.meta.env.DEV && typeof window !== "undefined"
       ? window.localStorage.getItem("last-puff-api-base-url")
       : null;
 
-  return (runtimeOverride || envBaseUrl || DEFAULT_API_BASE_URL).replace(/\/$/, "");
+  return (envBaseUrl || runtimeOverride || DEFAULT_API_BASE_URL).replace(/\/$/, "");
 }
 
 export const API_BASE_URL = resolveApiBaseUrl();

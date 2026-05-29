@@ -904,7 +904,15 @@ async function startQuitAttempt(userId) {
 }
 
 async function ensureUserAchievements(userId, snapshot, db = pool) {
-  const unlockedAchievements = await unlockDynamicAchievements(userId, snapshot, db);
+  let unlockedAchievements = [];
+  try {
+    unlockedAchievements = await unlockDynamicAchievements(userId, snapshot, db);
+  } catch (error) {
+    console.warn("Achievement sync skipped after recoverable failure", {
+      userId,
+      message: error.message,
+    });
+  }
 
   const milestoneDefinitions = [
     { key: "smoke-free-24h", condition: snapshot.smokeFreeHours >= 24, activityType: "smoke_free_milestone", title: "Smoke-free milestone reached", description: "24 hours smoke-free completed." },
@@ -918,36 +926,85 @@ async function ensureUserAchievements(userId, snapshot, db = pool) {
   ];
 
   for (const achievement of unlockedAchievements) {
-    await addActivity(userId, "achievement_unlocked", "Achievement unlocked", achievement.title, db);
+    try {
+      await addActivity(userId, "achievement_unlocked", "Achievement unlocked", achievement.title, db);
+    } catch (error) {
+      console.warn("Failed to record unlocked achievement activity", {
+        userId,
+        achievementKey: achievement.achievement_key,
+        message: error.message,
+      });
+    }
   }
 
   for (const milestone of milestoneDefinitions) {
     if (!milestone.condition) {
       continue;
     }
-    const created = await ensureMilestone(userId, milestone.key, { currentLevel: snapshot.currentLevelNumber }, db);
+    let created = false;
+    try {
+      created = await ensureMilestone(userId, milestone.key, { currentLevel: snapshot.currentLevelNumber }, db);
+    } catch (error) {
+      console.warn("Milestone sync skipped after recoverable failure", {
+        userId,
+        milestoneKey: milestone.key,
+        message: error.message,
+      });
+      continue;
+    }
     if (created) {
-      await addActivity(userId, milestone.activityType, milestone.title, milestone.description, db);
+      try {
+        await addActivity(userId, milestone.activityType, milestone.title, milestone.description, db);
+      } catch (error) {
+        console.warn("Failed to record milestone activity", {
+          userId,
+          milestoneKey: milestone.key,
+          message: error.message,
+        });
+      }
     }
   }
 
   if (snapshot.currentLevelNumber >= 15) {
-    const rewardUnlocked = await ensureMilestone(userId, "final-reward-unlocked", {
-      badge: "Freedom Badge",
-      certificate: true,
-    }, db);
+    let rewardUnlocked = false;
+    try {
+      rewardUnlocked = await ensureMilestone(userId, "final-reward-unlocked", {
+        badge: "Freedom Badge",
+        certificate: true,
+      }, db);
+    } catch (error) {
+      console.warn("Final reward sync skipped after recoverable failure", {
+        userId,
+        message: error.message,
+      });
+      rewardUnlocked = false;
+    }
 
     if (rewardUnlocked) {
-      await db.query(
-        `
-          INSERT INTO public.user_rewards (user_id, reward_key, reward_name, reward_type, status, metadata, unlocked_at)
-          VALUES ($1, 'freedom-badge', 'Freedom Badge', 'badge', 'unlocked', $2::jsonb, NOW())
-          ON CONFLICT (user_id, reward_key)
-          DO NOTHING
-        `,
-        [userId, JSON.stringify({ theme: "premium-final-recovery" })],
-      );
-      await addActivity(userId, "final_reward", "Premium reward unlocked", "Freedom Badge and completion rewards are now available.", db);
+      try {
+        await db.query(
+          `
+            INSERT INTO public.user_rewards (user_id, reward_key, reward_name, reward_type, status, metadata, unlocked_at)
+            VALUES ($1, 'freedom-badge', 'Freedom Badge', 'badge', 'unlocked', $2::jsonb, NOW())
+            ON CONFLICT (user_id, reward_key)
+            DO NOTHING
+          `,
+          [userId, JSON.stringify({ theme: "premium-final-recovery" })],
+        );
+      } catch (error) {
+        console.warn("Failed to store final reward", {
+          userId,
+          message: error.message,
+        });
+      }
+      try {
+        await addActivity(userId, "final_reward", "Premium reward unlocked", "Freedom Badge and completion rewards are now available.", db);
+      } catch (error) {
+        console.warn("Failed to record final reward activity", {
+          userId,
+          message: error.message,
+        });
+      }
     }
   }
 }
@@ -968,11 +1025,18 @@ async function getRecentActivity(userId, limit = 5, db = pool) {
 }
 
 async function emitUserRealtimeState(userId, payload = {}) {
-  const recentActivity = await getRecentActivity(userId, 5);
-  emitUserRefresh(userId, {
-    ...payload,
-    recentActivity,
-  });
+  try {
+    const recentActivity = await getRecentActivity(userId, 5);
+    emitUserRefresh(userId, {
+      ...payload,
+      recentActivity,
+    });
+  } catch (error) {
+    console.warn("Realtime refresh skipped after recoverable failure", {
+      userId,
+      message: error.message,
+    });
+  }
 }
 
 async function getAppsData(userId) {

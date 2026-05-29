@@ -312,9 +312,9 @@ function PermissionWizard({
       exit={{ opacity: 0 }}
       className="fixed inset-0 z-[120] bg-black/45 px-4 py-4 backdrop-blur-md"
     >
-      <div className="mx-auto flex h-full w-full max-w-3xl items-center justify-center">
-        <GlassCard className="max-h-[92vh] w-full overflow-hidden border border-foreground/10">
-          <div className="p-5">
+      <div className="mx-auto flex min-h-full w-full max-w-3xl items-start justify-center py-4 sm:items-center">
+        <GlassCard className="max-h-[calc(100dvh-2rem)] w-full overflow-hidden border border-foreground/10">
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain p-5">
             <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Permission Wizard</div>
             <div className="mt-2 text-2xl font-semibold text-foreground">{activeConfig.title}</div>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">{activeConfig.description}</p>
