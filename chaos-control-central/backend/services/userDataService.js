@@ -845,9 +845,9 @@ async function logCigarette(userId, payload) {
 
     await addActivity(userId, "cigarette_logged", "Smoking session recorded", `Logged ${count} cigarette${count === 1 ? "" : "s"}.`, client);
     const { snapshot, notifications } = await syncUserState(userId, client);
-    await ensureUserAchievements(userId, snapshot, client);
     await client.query("COMMIT");
 
+    await ensureUserAchievements(userId, snapshot);
     await emitUserRealtimeState(userId, { source: "cigarette_logged", notifications });
 
     return {
@@ -886,9 +886,9 @@ async function startQuitAttempt(userId) {
     );
     await addActivity(userId, "quit_started", "Quit attempt started", "Your future self approves.", client);
     const { snapshot, notifications } = await syncUserState(userId, client);
-    await ensureUserAchievements(userId, snapshot, client);
     await client.query("COMMIT");
 
+    await ensureUserAchievements(userId, snapshot);
     await emitUserRealtimeState(userId, { source: "quit_started", notifications });
 
     return {
