@@ -216,7 +216,7 @@ export function DashboardPage() {
 
   const recordMutation = useMutation({
     mutationFn: () =>
-      apiRequest("/api/cigarettes/log", {
+      apiRequest<{ success: boolean; message?: string; dashboard?: DashboardResponse }>("/api/cigarettes/log", {
         method: "POST",
         body: JSON.stringify({ cigarettesCount: 1, mood: "tracked" }),
       }),
@@ -259,7 +259,7 @@ export function DashboardPage() {
 
   const quitMutation = useMutation({
     mutationFn: () =>
-      apiRequest("/api/cigarettes/quit", {
+      apiRequest<{ success: boolean; message?: string; dashboard?: DashboardResponse }>("/api/cigarettes/quit", {
         method: "POST",
         body: JSON.stringify({}),
       }),
@@ -284,7 +284,19 @@ export function DashboardPage() {
       }
       setErrorMessage(error instanceof Error ? error.message : "Unable to start quit attempt.");
     },
-    onSuccess: () => {
+    onSuccess: (response) => {
+      const nextDashboard = response.dashboard;
+      if (nextDashboard) {
+        queryClient.setQueryData<DashboardResponse>(queryKeys.dashboard, nextDashboard);
+        appStore.updateUser({
+          id: nextDashboard.user.id,
+          username: nextDashboard.user.name,
+          email: nextDashboard.user.email,
+          avatar: nextDashboard.user.name.slice(0, 1).toUpperCase(),
+          cigarettePrice: nextDashboard.user.cigarettePrice,
+          visibilityEnabled: nextDashboard.user.visibilityEnabled,
+        });
+      }
       setQuitStep(0);
     },
     onSettled: () => {
