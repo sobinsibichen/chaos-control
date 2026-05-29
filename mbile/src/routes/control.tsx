@@ -176,6 +176,7 @@ function PermissionWizard({
   onComplete: () => void;
 }) {
   const [started, setStarted] = useState(false);
+  const [restrictedSettingsReviewed, setRestrictedSettingsReviewed] = useState(false);
   const nextStep = (() => {
     if (!open) {
       return "done" as PermissionWizardStep;
@@ -186,7 +187,7 @@ function PermissionWizard({
     if (!status) {
       return "intro" as PermissionWizardStep;
     }
-    if (status.restrictedSettingsRequired && !status.accessibilityEnabled) {
+    if (status.restrictedSettingsRequired && !restrictedSettingsReviewed) {
       return "restricted" as PermissionWizardStep;
     }
     if (!status.accessibilityEnabled || !status.accessibilityActive) {
@@ -252,6 +253,7 @@ function PermissionWizard({
   useEffect(() => {
     if (!open) {
       setStarted(false);
+      setRestrictedSettingsReviewed(false);
     }
   }, [open]);
 
@@ -272,7 +274,9 @@ function PermissionWizard({
       return;
     }
     if (nextStep === "restricted") {
+      setRestrictedSettingsReviewed(true);
       void openNativeAppInfo();
+      onRefresh();
       return;
     }
     if (nextStep === "accessibility") {
@@ -340,7 +344,12 @@ function PermissionWizard({
                 </button>
               ) : (
                 <button
-                  onClick={onRefresh}
+                  onClick={() => {
+                    if (nextStep === "restricted") {
+                      setRestrictedSettingsReviewed(true);
+                    }
+                    onRefresh();
+                  }}
                   className="rounded-2xl border border-foreground/10 bg-background px-4 py-3 text-sm font-semibold text-foreground shadow-sm"
                 >
                   Re-check permissions
