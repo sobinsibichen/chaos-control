@@ -19,7 +19,7 @@ import {
   TriangleAlert,
   Video,
 } from "lucide-react";
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AppShell } from "@/components/lp/AppShell";
 import { GlassCard } from "@/components/lp/GlassCard";
@@ -27,6 +27,7 @@ import { MentalStabilityChallenge } from "@/components/lp/damage/MentalStability
 import { apiRequest } from "@/lib/api";
 import { appStore, useAppStore } from "@/lib/app-store";
 import { requireAuth } from "@/lib/route-guards";
+import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 import {
   getInstalledApps,
   getNativeProtectionStatus,
@@ -458,8 +459,9 @@ function ControlPage() {
   const installedAppsLoadedRef = useRef(false);
   const lastNativeSyncRef = useRef("");
   const blockTime = formatBlockWindow(blockHour, blockMinute, blockEndHour, blockEndMinute);
+  useBodyScrollLock(permissionWizardOpen || pickerOpen);
 
-  const refreshNativeProtectionStatus = async () => {
+  const refreshNativeProtectionStatus = useCallback(async () => {
     if (!isNativeAndroid()) {
       return null;
     }
@@ -474,7 +476,7 @@ function ControlPage() {
       }
       return null;
     }
-  };
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -759,6 +761,54 @@ function ControlPage() {
       setPermissionWizardOpen(true);
     }
   }, [nativeProtectionStatus, permissionWizardComplete]);
+
+  useEffect(() => {
+    if (!isNativeAndroid()) {
+      return;
+    }
+
+    let burstTimer: number | null = null;
+    let intervalTimer: number | null = null;
+
+    const stopBurst = () => {
+      if (intervalTimer !== null) {
+        window.clearInterval(intervalTimer);
+        intervalTimer = null;
+      }
+      if (burstTimer !== null) {
+        window.clearTimeout(burstTimer);
+        burstTimer = null;
+      }
+    };
+
+    const refreshBurst = () => {
+      stopBurst();
+      void refreshNativeProtectionStatus();
+      intervalTimer = window.setInterval(() => {
+        void refreshNativeProtectionStatus();
+      }, 1200);
+      burstTimer = window.setTimeout(() => {
+        stopBurst();
+      }, 3600);
+    };
+
+    const handleFocus = () => refreshBurst();
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        refreshBurst();
+      }
+    };
+
+    refreshBurst();
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      stopBurst();
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [refreshNativeProtectionStatus]);
 
   useEffect(() => {
     if (!isNativeAndroid() || !permissionWizardOpen) {

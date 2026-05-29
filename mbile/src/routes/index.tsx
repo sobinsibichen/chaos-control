@@ -14,6 +14,7 @@ import { apiRequest } from "@/lib/api";
 import { appStore, useAppStore } from "@/lib/app-store";
 import { queryKeys } from "@/lib/query-keys";
 import { formatSmokeFree, useSmokeFreeTicker } from "@/lib/time";
+import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -135,6 +136,7 @@ export function DashboardPage() {
   const [popup, setPopup] = useState<{ type: "level" | "final"; title: string; description: string } | null>(null);
   const [cachedActivity, setCachedActivity] = useState<ActivityRow[]>([]);
   const previousLevelRef = useRef<number | null>(null);
+  useBodyScrollLock(quitStep > 0 || Boolean(popup));
 
   const dashboardQuery = useQuery({
     queryKey: queryKeys.dashboard,

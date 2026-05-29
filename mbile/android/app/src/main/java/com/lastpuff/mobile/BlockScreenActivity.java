@@ -13,16 +13,30 @@ import android.widget.TextView;
 public class BlockScreenActivity extends Activity {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private TextView countdownView;
+    private String blockedPackageName;
 
     private final Runnable countdownTicker = new Runnable() {
         @Override
         public void run() {
+            if (shouldCloseNow()) {
+                finishOverlay();
+                return;
+            }
             if (countdownView != null) {
                 countdownView.setText(BlockingEngine.getCountdownLabel(BlockScreenActivity.this));
             }
             handler.postDelayed(this, 1000L);
         }
     };
+
+    private boolean shouldCloseNow() {
+        return blockedPackageName == null || !BlockingEngine.shouldBlockPackage(this, blockedPackageName);
+    }
+
+    private void finishOverlay() {
+        handler.removeCallbacksAndMessages(null);
+        finish();
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -36,11 +50,16 @@ public class BlockScreenActivity extends Activity {
         setTurnScreenOn(true);
         setContentView(R.layout.activity_block_screen);
 
-        String packageName = getIntent().getStringExtra("packageName");
+        blockedPackageName = getIntent().getStringExtra("packageName");
         String appName = getIntent().getStringExtra("appName");
         String reason = getIntent().getStringExtra("reason");
         if (appName == null || appName.trim().isEmpty()) {
             appName = "This app";
+        }
+
+        if (shouldCloseNow()) {
+            finishOverlay();
+            return;
         }
 
         TextView title = findViewById(R.id.blocked_app_title);
@@ -53,7 +72,7 @@ public class BlockScreenActivity extends Activity {
         title.setText(appName + " is blocked");
         body.setText(getString(R.string.block_screen_quote));
         String schedule = "Schedule " + BlockingEngine.getBlockWindowLabel(this) + " • " + (reason == null ? "protection active" : reason);
-        hint.setText(schedule + (packageName == null ? "" : " • " + packageName));
+        hint.setText(schedule + (blockedPackageName == null ? "" : " • " + blockedPackageName));
         countdownView.setText(BlockingEngine.getCountdownLabel(this));
 
         openLastPuff.setOnClickListener(view -> {
@@ -62,7 +81,7 @@ public class BlockScreenActivity extends Activity {
                 launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
                 startActivity(launch);
             }
-            finish();
+            finishOverlay();
         });
 
         goHome.setOnClickListener(view -> {
@@ -70,7 +89,7 @@ public class BlockScreenActivity extends Activity {
             home.addCategory(Intent.CATEGORY_HOME);
             home.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             startActivity(home);
-            finish();
+            finishOverlay();
         });
     }
 
@@ -92,13 +111,23 @@ public class BlockScreenActivity extends Activity {
         home.addCategory(Intent.CATEGORY_HOME);
         home.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         startActivity(home);
+        finishOverlay();
     }
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
         if (event.getKeyCode() == KeyEvent.KEYCODE_BACK) {
+            if (event.getAction() == KeyEvent.ACTION_UP) {
+                onBackPressed();
+            }
             return true;
         }
         return super.dispatchKeyEvent(event);
+    }
+
+    @Override
+    protected void onDestroy() {
+        handler.removeCallbacksAndMessages(null);
+        super.onDestroy();
     }
 }

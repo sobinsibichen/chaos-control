@@ -85,6 +85,69 @@ function redactHeaders(headers?: Record<string, unknown>) {
   return next;
 }
 
+function redactRequestBody(body: unknown) {
+  if (body == null) {
+    return body;
+  }
+
+  if (typeof body === "string") {
+    return body.length > 500 ? `${body.slice(0, 500)}…` : body;
+  }
+
+  if (Array.isArray(body)) {
+    return body.slice(0, 25);
+  }
+
+  if (typeof body === "object") {
+    try {
+      return JSON.parse(JSON.stringify(body));
+    } catch {
+      return "[unserializable body]";
+    }
+  }
+
+  return body;
+}
+
+function resolveFriendlyErrorMessage(status?: number, message?: string, code?: string) {
+  if (status === 401) {
+    return message || "Please sign in again.";
+  }
+
+  if (code === "ECONNABORTED") {
+    return "The server took too long to respond. Please try again in a moment.";
+  }
+
+  if (!status || status >= 500) {
+    return "Unable to connect. Please try again.";
+  }
+
+  return message || "Unable to connect. Please try again.";
+}
+
+function logApiFailure(details: {
+  method: string;
+  url: string;
+  requestHeaders?: Record<string, unknown>;
+  requestBody?: unknown;
+  responseStatus?: number;
+  responseBody?: unknown;
+  error: unknown;
+}) {
+  console.error("[api-error]", {
+    endpoint: `${details.method} ${details.url}`,
+    request: {
+      headers: redactHeaders(details.requestHeaders),
+      body: redactRequestBody(details.requestBody),
+    },
+    response: {
+      status: details.responseStatus,
+      body: details.responseBody,
+    },
+    error: details.error instanceof Error ? { name: details.error.name, message: details.error.message, stack: details.error.stack } : details.error,
+  });
+}
+
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
   timeout: DEFAULT_REQUEST_TIMEOUT_MS,
@@ -125,21 +188,28 @@ apiClient.interceptors.response.use(
     const url = error.config?.url ?? "";
     const method = ((error.config?.method ?? "get") as string).toUpperCase();
     const backendMessage = error.response?.data?.message || error.message || "Request failed.";
-    const normalizedMessage =
-      error.code === "ECONNABORTED" || /timeout/i.test(backendMessage)
-        ? "The server took too long to respond. Please try again in a moment."
-        : /invalid input syntax for type uuid|invalid input syntax for type bigint|invalid input syntax for type integer/i.test(backendMessage)
-          ? "Your session or request data is out of sync. Please try again."
-          : backendMessage;
+    const normalizedMessage = /invalid input syntax for type uuid|invalid input syntax for type bigint|invalid input syntax for type integer/i.test(
+      backendMessage,
+    )
+      ? "Your session or request data is out of sync. Please try again."
+      : resolveFriendlyErrorMessage(status, backendMessage, error.code);
 
-    console.warn(`[api-debug] ${status ?? "ERR"} ${method} ${url} :: ${normalizedMessage}`);
+    logApiFailure({
+      method,
+      url,
+      requestHeaders: error.config?.headers instanceof AxiosHeaders ? error.config.headers.toJSON() : (error.config?.headers as Record<string, unknown> | undefined),
+      requestBody: error.config?.data,
+      responseStatus: status,
+      responseBody: error.response?.data,
+      error,
+    });
 
     if (status === 401 && shouldInvalidateSession(error.config as ApiInternalConfig | undefined)) {
       appStore.logout();
     }
 
     return Promise.reject(
-      new ApiRequestError(normalizedMessage || "Request failed.", status),
+      new ApiRequestError(normalizedMessage || "Unable to connect. Please try again.", status),
     );
   },
 );

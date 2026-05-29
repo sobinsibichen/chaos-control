@@ -1,7 +1,8 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { CircleCheckBig, RefreshCw } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { appStore } from "@/lib/app-store";
+import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 
 interface MentalStabilityChallengeProps {
   open: boolean;
@@ -29,11 +30,13 @@ export function MentalStabilityChallenge({ open, onClose, onResult }: MentalStab
   const [failed, setFailed] = useState(false);
   const [completed, setCompleted] = useState(false);
   const [attempts, setAttempts] = useState(0);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const paragraph = useMemo(() => paragraphs[seed]!, [seed]);
   const completedCount = typed.length;
   const progress = Math.min(100, (completedCount / paragraph.length) * 100);
+
+  useBodyScrollLock(open);
 
   useEffect(() => {
     if (!open) {
@@ -63,37 +66,26 @@ export function MentalStabilityChallenge({ open, onClose, onResult }: MentalStab
     window.setTimeout(() => inputRef.current?.focus(), 50);
   };
 
-  const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+  const handleChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
     if (!open || failed || completed) {
       return;
     }
 
-    if (event.key === "Backspace" || event.key === "Delete") {
-      event.preventDefault();
+    const nextValue = event.target.value;
+    if (nextValue === typed) {
       return;
     }
 
-    if (event.ctrlKey || event.metaKey || event.altKey) {
-      return;
-    }
-
-    const nextCharacter = event.key === "Spacebar" ? " " : event.key;
-    if (nextCharacter.length !== 1) {
-      return;
-    }
-
-    event.preventDefault();
-
-    if (completedCount >= paragraph.length) {
-      return;
-    }
-
-    if (paragraph[completedCount] !== nextCharacter) {
+    if (nextValue.length > paragraph.length) {
       failChallenge();
       return;
     }
 
-    const nextValue = typed + nextCharacter;
+    if (!paragraph.startsWith(nextValue)) {
+      failChallenge();
+      return;
+    }
+
     setTyped(nextValue);
 
     if (nextValue === paragraph) {
@@ -182,15 +174,17 @@ export function MentalStabilityChallenge({ open, onClose, onResult }: MentalStab
                   );
                 })}
               </div>
-              <input
+              <textarea
                 ref={inputRef}
                 autoFocus
                 autoComplete="off"
                 autoCapitalize="off"
                 autoCorrect="off"
                 spellCheck={false}
-                onKeyDown={handleKeyDown}
-                className="absolute inset-0 h-full w-full opacity-0 outline-none"
+                inputMode="text"
+                value={typed}
+                onChange={handleChange}
+                className="absolute inset-0 h-full w-full resize-none bg-transparent p-0 text-transparent caret-transparent outline-none"
                 aria-label="Type challenge text"
               />
             </div>
