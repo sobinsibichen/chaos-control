@@ -65,3 +65,26 @@ export async function listSmokeReplay(limit = 12) {
   const response = await apiRequest<ApiResponse<{ items: SmokeReplayRow[]; pagination: unknown }>>(`/api/smoke-replay?limit=${limit}`);
   return response.data.items.map(mapReplay);
 }
+
+export function createFallbackReplayRecord(): SmokeReplayRecord {
+  return {
+    id: 0,
+    replayPeriod: "monthly",
+    replayKey: "fallback",
+    title: "Replay unavailable",
+    periodStart: new Date().toISOString(),
+    periodEnd: new Date().toISOString(),
+    analytics: {
+      cigarettesConsumed: 0,
+      moneyBurned: 0,
+      peakCravingHour: null,
+      highestSmokingDay: null,
+      streak: 0,
+      calendarHeatmap: Array.from({ length: 12 }, (_, index) => ({ day: `Day ${index + 1}`, total: 0 })),
+      cigarettesAvoidedTotal: 0,
+    },
+    highlights: [],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+}

@@ -76,6 +76,24 @@ export async function fetchLiveCravingPrediction() {
   } satisfies CravingPredictionRecord;
 }
 
+export function createFallbackCravingPrediction(): CravingPredictionRecord {
+  return {
+    id: 0,
+    predictionWindow: "30m",
+    cravingProbability: 0,
+    intensityScore: 0,
+    dangerousHours: Array.from({ length: 24 }, (_, hour) => ({ hour, score: 0 })),
+    triggerPrediction: {
+      primary: "Routine loop",
+      mood: "neutral",
+      timeBias: 0,
+    },
+    insightText: "Craving insights will appear once enough data is available.",
+    generatedFrom: {},
+    createdAt: new Date().toISOString(),
+  };
+}
+
 export async function createCravingPrediction(payload: {
   predictionWindow?: string;
   stressLevel?: number | null;

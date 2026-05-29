@@ -2,11 +2,21 @@ import { useEffect, useMemo, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/api";
 import { useAppStore } from "@/lib/app-store";
-import { createCravingPrediction, fetchLiveCravingPrediction, listCravingPredictions, type CravingPredictionRecord } from "@/lib/cravingApi";
-import { createSmokeDna, listSmokeDna } from "@/lib/intelligenceApi";
-import { buildHeatmap, buildHourlyCravingData, buildWeeklyReplay, resolveSmokingProfile, type ActivityRow, type DashboardPayload, type RoastAnalyticsPayload } from "@/lib/intelligence";
+import { createCravingPrediction, createFallbackCravingPrediction, fetchLiveCravingPrediction, listCravingPredictions, type CravingPredictionRecord } from "@/lib/cravingApi";
+import { createFallbackSmokeDna, createSmokeDna, listSmokeDna } from "@/lib/intelligenceApi";
+import {
+  buildHeatmap,
+  buildHourlyCravingData,
+  buildWeeklyReplay,
+  createFallbackAnalytics,
+  createFallbackDashboard,
+  resolveSmokingProfile,
+  type ActivityRow,
+  type DashboardPayload,
+  type RoastAnalyticsPayload,
+} from "@/lib/intelligence";
 import { queryKeys } from "@/lib/query-keys";
-import { fetchMonthlyReplay, fetchYearlyReplay, listSmokeReplay } from "@/lib/replayApi";
+import { createFallbackReplayRecord, fetchMonthlyReplay, fetchYearlyReplay, listSmokeReplay } from "@/lib/replayApi";
 
 function buildPredictionSeries(prediction: CravingPredictionRecord | undefined) {
   const map = new Map<number, number>();
@@ -34,58 +44,112 @@ export function useIntelligenceData() {
 
   const dashboardQuery = useQuery({
     queryKey: queryKeys.dashboard,
-    queryFn: () => apiRequest<{ success: boolean } & DashboardPayload>("/api/stats/dashboard"),
+    queryFn: async () => {
+      try {
+        return await apiRequest<{ success: boolean } & DashboardPayload>("/api/stats/dashboard");
+      } catch {
+        return createFallbackDashboard();
+      }
+    },
     enabled: queriesEnabled,
     refetchInterval: 60000,
   });
 
   const analyticsQuery = useQuery({
     queryKey: queryKeys.analytics,
-    queryFn: () => apiRequest<{ success: boolean; analytics: RoastAnalyticsPayload }>("/api/analytics/roast"),
+    queryFn: async () => {
+      try {
+        return await apiRequest<{ success: boolean; analytics: RoastAnalyticsPayload }>("/api/analytics/roast");
+      } catch {
+        return { analytics: createFallbackAnalytics() };
+      }
+    },
     enabled: queriesEnabled,
     refetchInterval: 60000,
   });
 
   const activityQuery = useQuery({
     queryKey: queryKeys.activity,
-    queryFn: () => apiRequest<{ success: boolean; activity: ActivityRow[] }>("/api/activity/recent?limit=30"),
+    queryFn: async () => {
+      try {
+        return await apiRequest<{ success: boolean; activity: ActivityRow[] }>("/api/activity/recent?limit=30");
+      } catch {
+        return { activity: [] };
+      }
+    },
     enabled: queriesEnabled,
     refetchInterval: 60000,
   });
 
   const smokeDnaQuery = useQuery({
     queryKey: queryKeys.smokeDna,
-    queryFn: () => listSmokeDna(6),
+    queryFn: async () => {
+      try {
+        return await listSmokeDna(6);
+      } catch {
+        return createFallbackSmokeDna();
+      }
+    },
     enabled: queriesEnabled,
   });
 
   const replayHistoryQuery = useQuery({
     queryKey: queryKeys.smokeReplayHistory,
-    queryFn: () => listSmokeReplay(8),
+    queryFn: async () => {
+      try {
+        return await listSmokeReplay(8);
+      } catch {
+        return [];
+      }
+    },
     enabled: queriesEnabled,
   });
 
   const monthlyReplayQuery = useQuery({
     queryKey: queryKeys.smokeReplayMonthly(currentYear, currentMonth),
-    queryFn: () => fetchMonthlyReplay(currentYear, currentMonth),
+    queryFn: async () => {
+      try {
+        return await fetchMonthlyReplay(currentYear, currentMonth);
+      } catch {
+        return createFallbackReplayRecord();
+      }
+    },
     enabled: queriesEnabled,
   });
 
   const yearlyReplayQuery = useQuery({
     queryKey: queryKeys.smokeReplayYearly(currentYear),
-    queryFn: () => fetchYearlyReplay(currentYear),
+    queryFn: async () => {
+      try {
+        return await fetchYearlyReplay(currentYear);
+      } catch {
+        return createFallbackReplayRecord();
+      }
+    },
     enabled: queriesEnabled,
   });
 
   const cravingHistoryQuery = useQuery({
     queryKey: queryKeys.cravingHistory,
-    queryFn: () => listCravingPredictions(12),
+    queryFn: async () => {
+      try {
+        return await listCravingPredictions(12);
+      } catch {
+        return [];
+      }
+    },
     enabled: queriesEnabled,
   });
 
   const liveCravingQuery = useQuery({
     queryKey: queryKeys.cravingLive,
-    queryFn: fetchLiveCravingPrediction,
+    queryFn: async () => {
+      try {
+        return await fetchLiveCravingPrediction();
+      } catch {
+        return createFallbackCravingPrediction();
+      }
+    },
     enabled: queriesEnabled,
     refetchInterval: 60000,
   });

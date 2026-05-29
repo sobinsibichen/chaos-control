@@ -191,6 +191,10 @@ export async function listSmokeDna(limit = 5) {
   return mapPaged(response.data, mapSmokeDna);
 }
 
+export function createFallbackSmokeDna(): PagedPayload<SmokeDnaRecord> {
+  return { items: [], pagination: { page: 1, limit: 5, total: 0, totalPages: 0 } };
+}
+
 export async function createSmokeDna(payload: Partial<SmokeDnaRecord> = {}) {
   const response = await apiRequest<ApiResponse<SmokeDnaRow>>("/api/smoke-dna", {
     method: "POST",

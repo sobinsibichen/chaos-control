@@ -9,10 +9,11 @@ interface Props {
 }
 
 export function CircularMeter({ value, label, sub, size = 160, color = "oklch(0.68 0.15 50)" }: Props) {
+  const safeValue = Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 0;
   const stroke = 10;
   const r = (size - stroke) / 2;
   const c = 2 * Math.PI * r;
-  const offset = c - (value / 100) * c;
+  const offset = c - (safeValue / 100) * c;
 
   return (
     <div className="relative" style={{ width: size, height: size }}>
@@ -41,7 +42,7 @@ export function CircularMeter({ value, label, sub, size = 160, color = "oklch(0.
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
         <div className="text-[10px] font-medium uppercase tracking-[0.15em] text-muted-foreground">{label}</div>
-        <div className="text-4xl font-bold text-foreground mt-1">{value}%</div>
+        <div className="text-4xl font-bold text-foreground mt-1">{Math.round(safeValue)}%</div>
         {sub && <div className="text-[10px] mt-1 font-medium text-muted-foreground max-w-[100px]">{sub}</div>}
       </div>
     </div>

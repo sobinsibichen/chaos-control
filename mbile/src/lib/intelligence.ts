@@ -222,3 +222,83 @@ export function buildVoiceReply(command: string, context: {
 
   return `I did not understand that. Try asking about smoking stats, money saved, streaks, or motivation.`;
 }
+
+export function createFallbackDashboard(): DashboardPayload {
+  return {
+    user: {
+      id: 0,
+      name: "Last Puff",
+      email: "",
+      cigarettePrice: 20,
+      visibilityEnabled: true,
+    },
+    dailyStatus: {
+      regretLevel: 0,
+      stabilityLevel: 0,
+      focusLevel: "Loading",
+      focusScore: 0,
+      score: 0,
+      recoveryStage: "Tracking live",
+    },
+    smokeFree: {
+      startedAt: null,
+      seconds: 0,
+    },
+    streak: {
+      current: 0,
+      highest: 0,
+    },
+    level: {
+      current: 1,
+      name: "Starter",
+      rewardTitle: "Tracking your recovery",
+      next: null,
+      progressPercent: 0,
+    },
+    lungs: {
+      percent: 0,
+      stage: "Oxygen improving",
+    },
+    savings: {
+      today: 0,
+      weekly: 0,
+      total: 0,
+      avoidedToday: 0,
+      avoidedTotal: 0,
+    },
+    stats: {
+      todayCount: 0,
+      quitsCount: 0,
+      totalCigarettes: 0,
+      moneyBurned: 0,
+      blockedBuys: 0,
+      focusLevel: "Loading",
+      dailySmokingAverage: 0,
+      cigarettePrice: 20,
+      longestSmokeFreeSeconds: 0,
+    },
+    notifications: [],
+  };
+}
+
+export function createFallbackAnalytics(): RoastAnalyticsPayload {
+  return {
+    annualSpend: 0,
+    dailyAverage: 0,
+    monthlyProjection: 0,
+    worstDay: null,
+    peakSingleDay: 0,
+    highestDailySpend: 0,
+    blockedPurchases: 0,
+    monthlyCigarettes: Array.from({ length: 12 }, () => 0),
+    cigarettePrice: 20,
+    currencySymbol: "Rs",
+    todaySavings: 0,
+    weeklySavings: 0,
+    totalSavings: 0,
+    currentStreak: 0,
+    lungsRecoveryPercent: 0,
+    recoveryStage: "Tracking live",
+    cigarettesAvoidedTotal: 0,
+  };
+}
