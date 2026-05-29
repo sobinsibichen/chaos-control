@@ -163,19 +163,6 @@ function isProtectionReady(status: NativeProtectionStatus | null) {
   );
 }
 
-function isPermissionsReady(status: NativeProtectionStatus | null) {
-  if (!status) {
-    return false;
-  }
-
-  return (
-    (status.accessibilityEnabled || status.accessibilityActive) &&
-    status.usageAccessGranted &&
-    status.overlayPermissionGranted &&
-    status.batteryOptimizationIgnored
-  );
-}
-
 type PermissionWizardStep = "intro" | "restricted" | "accessibility" | "usage" | "overlay" | "battery" | "done";
 
 function PermissionWizard({
@@ -373,8 +360,8 @@ function PermissionWizard({
 
             <div className="mt-5 grid gap-3">
               {[
-                ["Permissions Ready", isPermissionsReady(status)],
-                ["Permissions Missing", !isPermissionsReady(status)],
+                ["Protection Ready", isProtectionReady(status)],
+                ["Permissions Missing", !isProtectionReady(status)],
                 ["Protection Active", Boolean(status?.accessibilityActive && status?.scheduleActive && status?.blockingActive)],
               ].map(([label, active]) => (
                 <div key={label as string} className="flex items-center justify-between rounded-2xl border border-foreground/10 bg-background px-4 py-3">
@@ -465,7 +452,6 @@ function ControlPage() {
   const [savingSelection, setSavingSelection] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [savedNotifications, setSavedNotifications] = useState<string[]>([]);
-  const [scheduleStatusMessage, setScheduleStatusMessage] = useState("");
   const [installedApps, setInstalledApps] = useState<CatalogApp[]>([]);
   const [nativeProtectionStatus, setNativeProtectionStatus] = useState<NativeProtectionStatus | null>(null);
   const [permissionWizardOpen, setPermissionWizardOpen] = useState(false);
@@ -474,8 +460,6 @@ function ControlPage() {
   const lastNativeSyncRef = useRef("");
   const blockTime = formatBlockWindow(blockHour, blockMinute, blockEndHour, blockEndMinute);
   useBodyScrollLock(permissionWizardOpen || pickerOpen);
-  const permissionsReady = isPermissionsReady(nativeProtectionStatus);
-  const protectionReady = isProtectionReady(nativeProtectionStatus);
 
   const refreshNativeProtectionStatus = useCallback(async () => {
     if (!isNativeAndroid()) {
@@ -602,7 +586,6 @@ function ControlPage() {
           enabled: true,
         }),
       });
-      setScheduleStatusMessage("Time saved successfully.");
       if (isNativeAndroid()) {
         try {
           const status = await syncNativeProtectionConfig({
@@ -627,18 +610,11 @@ function ControlPage() {
         }
       }
     } catch (error) {
-      setScheduleStatusMessage("");
       setErrorMessage(error instanceof Error ? error.message : "Unable to save schedule.");
     } finally {
       setSavingSchedule(false);
     }
   };
-
-  useEffect(() => {
-    if (scheduleStatusMessage) {
-      setScheduleStatusMessage("");
-    }
-  }, [blockHour, blockMinute, blockEndHour, blockEndMinute]);
 
   useEffect(() => {
     if (!hydrated || !isAuthenticated || !isNativeAndroid() || !hasLoadedRef.current) {
@@ -775,10 +751,10 @@ function ControlPage() {
       return;
     }
 
-    if (permissionWizardOpen && permissionsReady) {
+    if (isProtectionReady(nativeProtectionStatus)) {
       completePermissionWizard();
     }
-  }, [permissionWizardOpen, permissionsReady]);
+  }, [nativeProtectionStatus]);
 
   useEffect(() => {
     if (!isNativeAndroid()) {
@@ -983,7 +959,7 @@ function ControlPage() {
               <div className="mt-1 text-lg font-semibold text-foreground">
                 {unlockedApps
                   ? "Protection Disabled"
-                  : protectionReady
+                  : isProtectionReady(nativeProtectionStatus)
                     ? "Protection Ready"
                     : selectedAppsCount
                       ? "Permissions Missing"
@@ -992,7 +968,7 @@ function ControlPage() {
               <div className="mt-1 text-xs text-muted-foreground">
                 {unlockedApps
                   ? "Apps are accessible. Proceed with caution."
-                  : protectionReady
+                  : isProtectionReady(nativeProtectionStatus)
                     ? `${selectedAppsCount} apps are protected and the blocker is active.`
                     : "Finish the guided permissions flow to activate blocking."}
               </div>
@@ -1069,9 +1045,7 @@ function ControlPage() {
                 {savingSchedule ? "Saving..." : "Save"}
               </motion.button>
             </div>
-            <div className="mt-2 text-[11px] text-muted-foreground">
-              {savingSchedule ? "Saving schedule..." : scheduleStatusMessage || "Schedule saves when you tap Save."}
-            </div>
+            <div className="mt-2 text-[11px] text-muted-foreground">{savingSchedule ? "Saving schedule..." : "Schedule saves when you tap Save."}</div>
           </div>
 
           <div className="rounded-2xl border border-foreground/10 bg-card p-4 shadow-sm">

@@ -224,8 +224,6 @@ export function InsightsHub({ initialTab = "Roast" }: { initialTab?: InsightsTab
                 <CravingAiTab
                   data={data}
                   dangerousWindow={dangerousWindow}
-                  onGeneratePrediction={() => void data.requestCravingPrediction()}
-                  generatingPrediction={data.isRequestingCravingPrediction}
                 />
               </Suspense>
             </InsightsTabErrorBoundary>

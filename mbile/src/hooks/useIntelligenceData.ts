@@ -52,7 +52,6 @@ export function useIntelligenceData() {
       }
     },
     enabled: queriesEnabled,
-    refetchInterval: 60000,
   });
 
   const analyticsQuery = useQuery({
@@ -65,7 +64,6 @@ export function useIntelligenceData() {
       }
     },
     enabled: queriesEnabled,
-    refetchInterval: 60000,
   });
 
   const activityQuery = useQuery({
@@ -78,7 +76,6 @@ export function useIntelligenceData() {
       }
     },
     enabled: queriesEnabled,
-    refetchInterval: 60000,
   });
 
   const smokeDnaQuery = useQuery({
@@ -151,7 +148,6 @@ export function useIntelligenceData() {
       }
     },
     enabled: queriesEnabled,
-    refetchInterval: 60000,
   });
 
   const createSmokeDnaMutation = useMutation({
@@ -168,10 +164,6 @@ export function useIntelligenceData() {
       void queryClient.invalidateQueries({ queryKey: queryKeys.cravingLive });
     },
   });
-
-  const requestCravingPrediction = () => {
-    createCravingMutation.mutate();
-  };
 
   useEffect(() => {
     if (!queriesEnabled || !dashboardQuery.data || !analyticsQuery.data?.analytics) {
@@ -243,8 +235,6 @@ export function useIntelligenceData() {
     hourlyCraving,
     weeklyReplay,
     replayHeatmap,
-    requestCravingPrediction,
-    isRequestingCravingPrediction: createCravingMutation.isPending,
     isReady: queriesEnabled,
     isLoading:
       dashboardQuery.isLoading ||

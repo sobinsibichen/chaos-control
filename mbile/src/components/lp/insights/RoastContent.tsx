@@ -37,7 +37,6 @@ export function RoastContent() {
     queryKey: queryKeys.analytics,
     queryFn: () => apiRequest<{ success: boolean; analytics: AnalyticsPayload }>("/api/analytics/roast"),
     enabled: queriesEnabled,
-    refetchInterval: 60000,
   });
 
   const highlightsQuery = useQuery({
@@ -45,7 +44,6 @@ export function RoastContent() {
     queryFn: () =>
       apiRequest<{ success: boolean; highlights: AnalyticsPayload & { blockedLogs: Array<{ id: number; app_name: string; message: string | null }> } }>("/api/analytics/highlights"),
     enabled: queriesEnabled,
-    refetchInterval: 60000,
   });
 
   const analytics = analyticsQuery.data?.analytics;
