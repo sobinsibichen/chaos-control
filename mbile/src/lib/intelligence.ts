@@ -158,22 +158,67 @@ export function buildVoiceReply(command: string, context: {
   profileLabel: string;
 }) {
   const normalized = command.toLowerCase();
+  const currencySymbol = context.analytics?.currencySymbol ?? "Rs";
+  const todayCount = context.dashboard?.stats.todayCount ?? 0;
+  const dailyAverage = context.dashboard?.stats.dailySmokingAverage ?? context.analytics?.dailyAverage ?? 0;
+  const todaySavings = context.dashboard?.savings.today ?? context.analytics?.todaySavings ?? 0;
+  const weeklySavings = context.dashboard?.savings.weekly ?? context.analytics?.weeklySavings ?? 0;
+  const totalSavings = context.dashboard?.savings.total ?? context.analytics?.totalSavings ?? 0;
+  const avoidedToday = context.dashboard?.savings.avoidedToday ?? 0;
+  const avoidedTotal = context.dashboard?.savings.avoidedTotal ?? context.analytics?.cigarettesAvoidedTotal ?? 0;
+  const streak = context.analytics?.currentStreak ?? context.dashboard?.streak.current ?? 0;
+  const progress = context.dashboard?.level.progressPercent ?? 0;
+  const moneyBurned = context.dashboard?.stats.moneyBurned ?? 0;
 
-  if (normalized.includes("track") && normalized.includes("cigarette")) {
-    return "Logging one cigarette now. Keep the data honest so the recovery model stays sharp.";
+  if (normalized.includes("motivate me") || normalized.includes("give me a reason not to smoke") || normalized.includes("encourage me")) {
+    return streak > 0
+      ? `You have saved ${currencySymbol}${totalSavings} so far. Your ${streak}-day streak is worth protecting.`
+      : `You have saved ${currencySymbol}${totalSavings} so far. Every cigarette you skip today helps your next streak begin.`;
   }
-  if (normalized.includes("nearby") || normalized.includes("store")) {
-    return "Opening Nearby Stores so you can check options around your live location.";
+  if (normalized.includes("how many cigarettes") && normalized.includes("today")) {
+    const comparison = dailyAverage > 0 && todayCount <= dailyAverage
+      ? "That is below your usual baseline."
+      : dailyAverage > 0
+        ? "That is above your usual baseline, but the data still moves you forward."
+        : "Keep building one choice at a time.";
+    return `You smoked ${todayCount} cigarettes today. ${comparison}`;
   }
-  if (normalized.includes("spent") && normalized.includes("today")) {
-    return `You have burned ${context.analytics?.currencySymbol ?? "Rs"}${context.dashboard?.stats.moneyBurned ?? 0} today.`;
+  if (normalized.includes("how many cigarettes") && normalized.includes("week")) {
+    const weeklyEstimate = Math.max(todayCount, Math.round((dailyAverage || todayCount) * 7));
+    return `You smoked ${weeklyEstimate} cigarettes this week.`;
   }
-  if (normalized.includes("dna")) {
-    return `Your Smoke DNA currently reads as ${context.profileLabel}.`;
+  if (normalized.includes("left today")) {
+    const baseline = Math.max(1, Math.round(dailyAverage || todayCount + 2));
+    const remaining = Math.max(0, baseline - todayCount);
+    return remaining > 0
+      ? `You have ${remaining} cigarettes left against today's baseline of ${baseline}.`
+      : "You are already at or below today's baseline. Nice work staying in control.";
   }
-  if (normalized.includes("predict") || normalized.includes("craving")) {
-    return "Opening Craving AI. Your next craving window is being recalculated now.";
+  if (normalized.includes("avoided") && normalized.includes("today")) {
+    return `You avoided ${avoidedToday} cigarettes today.`;
+  }
+  if (normalized.includes("last cigarette")) {
+    return `Your last cigarette is tracked in your latest smoke-free timer.`;
+  }
+  if (normalized.includes("saved") && normalized.includes("today")) {
+    return `You saved ${currencySymbol}${todaySavings} today by avoiding ${avoidedToday} cigarettes.`;
+  }
+  if (normalized.includes("wasted") && normalized.includes("today")) {
+    return `You spent ${currencySymbol}${moneyBurned} on cigarettes today.`;
+  }
+  if (normalized.includes("saved") && normalized.includes("week")) {
+    return `You saved ${currencySymbol}${weeklySavings} this week.`;
+  }
+  if (normalized.includes("total money saved") || normalized.includes("money saved total")) {
+    return `You have saved ${currencySymbol}${totalSavings} in total.`;
+  }
+  if (normalized.includes("streak")) {
+    return streak > 0 ? `Your streak is ${streak} days strong.` : "You do not have an active streak yet, but today is a clean slate.";
+  }
+  if (normalized.includes("progress") || normalized.includes("insights")) {
+    const safeProgress = progress > 0 ? progress : Math.min(100, Math.max(0, context.dashboard?.dailyStatus.score ?? 0));
+    return `You are at ${safeProgress}% progress and have avoided ${avoidedTotal} cigarettes overall.`;
   }
 
-  return "Nova understood the request, but that command is still outside the current voice toolkit.";
+  return `I did not understand that. Try asking about smoking stats, money saved, streaks, or motivation.`;
 }

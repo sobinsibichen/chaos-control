@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { Component, lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
 import { motion } from "framer-motion";
 import { AppShell } from "@/components/lp/AppShell";
 import { GlassCard } from "@/components/lp/GlassCard";
@@ -13,6 +13,33 @@ const CravingAiTab = lazy(async () => ({ default: (await import("./CravingAiPane
 const VoiceTab = lazy(async () => ({ default: (await import("./VoicePanel")).VoicePanel }));
 
 const tabs: InsightsTab[] = ["Roast", "Smoke DNA", "Smoke Replay", "Craving AI", "Voice"];
+
+class InsightsTabErrorBoundary extends Component<{ tabName: InsightsTab; children: ReactNode }, { hasError: boolean }> {
+  state = { hasError: false };
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  override render() {
+    if (this.state.hasError) {
+      return (
+        <GlassCard className="border border-foreground/10">
+          <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">{this.props.tabName}</div>
+          <div className="mt-2 text-lg font-semibold text-foreground">This section couldn't load</div>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Something in this tab failed to render. Try refreshing the page, or switch to a different tab for now.
+          </p>
+          <button onClick={() => window.location.reload()} className="mt-4 rounded-full bg-black px-4 py-2 text-sm font-semibold text-white">
+            Try again
+          </button>
+        </GlassCard>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 
 function TabSkeleton() {
   return (
@@ -76,21 +103,28 @@ export function InsightsHub({ initialTab = "Roast" }: { initialTab?: InsightsTab
 
   useEffect(() => {
     void syncNativeVoiceAssistantCache({
-      cigaretteCount: data.dashboard?.stats.todayCount ?? 0,
-      streaks: data.dashboard?.streak,
-      cravings: data.liveCraving,
-      roast: data.analytics,
-      spending: data.dashboard?.stats.moneyBurned ?? 0,
+      dashboard: data.dashboard,
+      analytics: data.analytics,
+      activity: data.activity.slice(0, 30),
       smokeDna: data.smokeDna,
       replayHistory: data.replayHistory.slice(0, 5),
+      cravingHistory: data.cravingHistory.slice(0, 5),
+      liveCraving: data.liveCraving,
+      profileLabel: data.profileLabel,
     });
-  }, [data.analytics, data.dashboard?.stats.moneyBurned, data.dashboard?.stats.todayCount, data.dashboard?.streak, data.liveCraving, data.replayHistory, data.smokeDna]);
+  }, [data.activity, data.analytics, data.cravingHistory, data.dashboard, data.liveCraving, data.profileLabel, data.replayHistory, data.smokeDna]);
 
   const radarData = useMemo(
     () => [
       { metric: "Stress", value: data.smokeDna?.moodCorrelation.stressed ?? Math.min(100, (data.dashboard?.dailyStatus.regretLevel ?? 40) + 12) },
       { metric: "Routine", value: data.smokeDna?.habitScore ?? Math.min(100, (data.dashboard?.stats.dailySmokingAverage ?? 4) * 8) },
-      { metric: "Night", value: Math.max(...data.hourlyCraving.slice(18).map((item) => item.intensity)) },
+      {
+        metric: "Night",
+        value: (() => {
+          const nightValues = data.hourlyCraving.slice(18).map((item) => item.intensity);
+          return nightValues.length ? Math.max(...nightValues) : 0;
+        })(),
+      },
       { metric: "Social", value: data.smokeDna?.moodCorrelation.social ?? Math.min(100, 35 + (data.dashboard?.stats.blockedBuys ?? 0) * 4) },
       { metric: "Heavy", value: data.smokeDna?.smokingIntensity ?? Math.min(100, (data.analytics?.peakSingleDay ?? 0) * 8) },
     ],
@@ -155,41 +189,51 @@ export function InsightsHub({ initialTab = "Roast" }: { initialTab?: InsightsTab
       <div className="space-y-6">
         {loadedTabs.Roast ? (
           <div className={activeTab === "Roast" ? "block" : "hidden"}>
-            <Suspense fallback={<TabSkeleton />}>
-              <RoastTab />
-            </Suspense>
+            <InsightsTabErrorBoundary tabName="Roast">
+              <Suspense fallback={<TabSkeleton />}>
+                <RoastTab />
+              </Suspense>
+            </InsightsTabErrorBoundary>
           </div>
         ) : null}
 
         {loadedTabs["Smoke DNA"] ? (
           <div className={activeTab === "Smoke DNA" ? "block" : "hidden"}>
-            <Suspense fallback={<TabSkeleton />}>
-              <SmokeDnaTab data={data} radarData={radarData} insightCards={insightCards} />
-            </Suspense>
+            <InsightsTabErrorBoundary tabName="Smoke DNA">
+              <Suspense fallback={<TabSkeleton />}>
+                <SmokeDnaTab data={data} radarData={radarData} insightCards={insightCards} />
+              </Suspense>
+            </InsightsTabErrorBoundary>
           </div>
         ) : null}
 
         {loadedTabs["Smoke Replay"] ? (
           <div className={activeTab === "Smoke Replay" ? "block" : "hidden"}>
-            <Suspense fallback={<TabSkeleton />}>
-              <SmokeReplayTab data={data} replaySlides={replaySlides} replayIndex={replayIndex} setReplayIndex={setReplayIndex} />
-            </Suspense>
+            <InsightsTabErrorBoundary tabName="Smoke Replay">
+              <Suspense fallback={<TabSkeleton />}>
+                <SmokeReplayTab data={data} replaySlides={replaySlides} replayIndex={replayIndex} setReplayIndex={setReplayIndex} />
+              </Suspense>
+            </InsightsTabErrorBoundary>
           </div>
         ) : null}
 
         {loadedTabs["Craving AI"] ? (
           <div className={activeTab === "Craving AI" ? "block" : "hidden"}>
-            <Suspense fallback={<TabSkeleton />}>
-              <CravingAiTab data={data} dangerousWindow={dangerousWindow} />
-            </Suspense>
+            <InsightsTabErrorBoundary tabName="Craving AI">
+              <Suspense fallback={<TabSkeleton />}>
+                <CravingAiTab data={data} dangerousWindow={dangerousWindow} />
+              </Suspense>
+            </InsightsTabErrorBoundary>
           </div>
         ) : null}
 
         {loadedTabs.Voice ? (
           <div className={activeTab === "Voice" ? "block" : "hidden"}>
-            <Suspense fallback={<TabSkeleton />}>
-              <VoiceTab data={data} activeTab={activeTab} onTabChange={setActiveTab} />
-            </Suspense>
+            <InsightsTabErrorBoundary tabName="Voice">
+              <Suspense fallback={<TabSkeleton />}>
+                <VoiceTab data={data} activeTab={activeTab} onTabChange={setActiveTab} />
+              </Suspense>
+            </InsightsTabErrorBoundary>
           </div>
         ) : null}
       </div>

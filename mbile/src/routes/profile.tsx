@@ -197,9 +197,22 @@ function Profile() {
 
   const formatMoney = (value: number) => `Rs${Math.round(value).toLocaleString("en-IN")}`;
   const currentLevel = profile?.level ?? 1;
-  const currentPoints = profile?.currentLevelXp ?? 0;
   const levelGuide = profile?.levelGuide?.length ? profile.levelGuide : fallbackLevelGuide;
+  const currentPoints = useMemo(() => {
+    const serverPoints = profile?.currentLevelXp ?? 0;
+    const streakBonus = (profile?.streak.current ?? 0) * 10;
+    const smokeFreeBonus = Math.floor((smokeFreeSeconds / 3600) * 1.2);
+    const avoidedBonus = Math.floor((profile?.stats.totalCigarettesAvoided ?? 0) * 1.5);
+    return Math.max(serverPoints, streakBonus + smokeFreeBonus + avoidedBonus);
+  }, [profile, smokeFreeSeconds]);
   const nextLevel = levelGuide.find((level) => level.level > currentLevel) ?? null;
+  const currentLevelInfo = levelGuide.find((level) => level.level === currentLevel) ?? levelGuide[0] ?? null;
+  const currentThreshold = currentLevelInfo?.requiredPoints ?? 0;
+  const nextThreshold = nextLevel?.requiredPoints ?? currentThreshold + 100;
+  const levelProgressPercent =
+    nextLevel && nextThreshold > currentThreshold
+      ? Math.max(0, Math.min(100, ((currentPoints - currentThreshold) / (nextThreshold - currentThreshold)) * 100))
+      : profile?.levelProgressPercent ?? 100;
 
   const roadmapProgress = useMemo(
     () =>
@@ -256,14 +269,14 @@ function Profile() {
         <div className="mt-4">
           <div className="mb-2 flex justify-between text-[10px] font-medium">
             <span className="text-muted-foreground">
-              Level {profile?.level ?? 1} Â· {profile?.levelName ?? "Starter"}
+              Level {profile?.level ?? 1} · {profile?.levelName ?? "Starter"}
             </span>
-            <span className="text-primary">{profile?.levelProgressPercent ?? 0}%</span>
+            <span className="text-primary">{Math.round(levelProgressPercent)}%</span>
           </div>
           <div className="h-1.5 overflow-hidden rounded-full bg-white/8">
             <motion.div
               initial={{ width: 0 }}
-              animate={{ width: `${profile?.levelProgressPercent ?? 0}%` }}
+              animate={{ width: `${Math.round(levelProgressPercent)}%` }}
               transition={{ duration: 1.2 }}
               className="h-full bg-gradient-to-r from-primary via-stone-400 to-stone-700"
             />
@@ -325,7 +338,7 @@ function Profile() {
                       <div className="flex items-start justify-between gap-4">
                         <div className="min-w-0">
                           <div className="text-sm font-semibold text-foreground">
-                            Level {level.level} Â· {level.name}
+                            Level {level.level} · {level.name}
                           </div>
                           <div className="mt-1 text-xs text-muted-foreground">{level.rewardTitle}</div>
                         </div>
@@ -655,3 +668,5 @@ function Profile() {
     </AppShell>
   );
 }
+
+

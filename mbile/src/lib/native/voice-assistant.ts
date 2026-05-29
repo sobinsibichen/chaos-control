@@ -2,15 +2,23 @@ import { Capacitor, registerPlugin } from "@capacitor/core";
 
 interface VoiceAssistantStatus {
   running: boolean;
-  wakeWord: string;
-  lastCommandAt: string | null;
+  assistantName: string;
+  cacheReady: boolean;
+  appActionsReady: boolean;
+  googleAssistantReady: boolean;
+  voiceCommandsEnabled: boolean;
+  cacheUpdatedAt: number;
+  lastInvocationAt: number;
+  lastCommand: string | null;
+  lastResponse: string | null;
 }
 
 interface VoiceAssistantPlugin {
-  start(options?: { wakeWord?: string }): Promise<VoiceAssistantStatus>;
+  start(): Promise<VoiceAssistantStatus>;
   stop(): Promise<VoiceAssistantStatus>;
   getStatus(): Promise<VoiceAssistantStatus>;
   syncCache(options: { payload: Record<string, unknown> }): Promise<void>;
+  setAssistantName(options: { assistantName: string }): Promise<VoiceAssistantStatus>;
 }
 
 const VoiceAssistant = registerPlugin<VoiceAssistantPlugin>("VoiceAssistant");
@@ -19,12 +27,12 @@ export function isNativeVoiceAssistantAvailable() {
   return Capacitor.getPlatform() === "android";
 }
 
-export async function startNativeVoiceAssistant(wakeWord = "Hey Nova") {
+export async function startNativeVoiceAssistant() {
   if (!isNativeVoiceAssistantAvailable()) {
     return null;
   }
 
-  return VoiceAssistant.start({ wakeWord });
+  return VoiceAssistant.start();
 }
 
 export async function stopNativeVoiceAssistant() {
@@ -49,4 +57,12 @@ export async function syncNativeVoiceAssistantCache(payload: Record<string, unkn
   }
 
   await VoiceAssistant.syncCache({ payload });
+}
+
+export async function setNativeAssistantName(assistantName: string) {
+  if (!isNativeVoiceAssistantAvailable()) {
+    return null;
+  }
+
+  return VoiceAssistant.setAssistantName({ assistantName });
 }

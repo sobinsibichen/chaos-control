@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+﻿import { createFileRoute } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   BrainCircuit,
@@ -31,10 +31,10 @@ import {
   getInstalledApps,
   getNativeProtectionStatus,
   isNativeAndroid,
+  openNativeAppInfo,
   openNativeAccessibilitySettings,
   openNativeOverlaySettings,
   openNativeUsageAccessSettings,
-  pickNativeBlockTime,
   relockNativeProtection,
   requestNativeBatteryOptimizationExemption,
   syncNativeProtectionConfig,
@@ -95,6 +95,7 @@ interface CatalogApp {
 
 const fallbackAppIcon: keyof typeof iconMap = "LayoutGrid";
 const CONTROL_CACHE_KEY = "last-puff-control-cache";
+const CONTROL_PERMISSION_WIZARD_KEY = "last-puff-control-permission-wizard-complete";
 
 function formatTime24(hour: number, minute: number) {
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
@@ -110,7 +111,7 @@ function formatDisplayTime(hour: number, minute: number) {
 }
 
 function formatBlockWindow(startHour: number, startMinute: number, endHour: number, endMinute: number) {
-  return `${formatDisplayTime(startHour, startMinute)} → ${formatDisplayTime(endHour, endMinute)}`;
+  return `${formatDisplayTime(startHour, startMinute)} â†’ ${formatDisplayTime(endHour, endMinute)}`;
 }
 
 function parseBlockWindow(blockTime?: string | null) {
@@ -118,7 +119,7 @@ function parseBlockWindow(blockTime?: string | null) {
     return null;
   }
 
-  const normalized = blockTime.replace(/to|→/gi, "-");
+  const normalized = blockTime.replace(/to|â†’/gi, "-");
   const [startRaw, endRaw] = normalized.split("-");
   const [startHourText, startMinuteText] = (startRaw ?? "").trim().split(":");
   const startHour = Number.parseInt(startHourText ?? "", 10);
@@ -145,6 +146,225 @@ function parseBlockWindow(blockTime?: string | null) {
   }
 
   return { startHour, startMinute, endHour, endMinute };
+}
+
+function isProtectionReady(status: NativeProtectionStatus | null) {
+  if (!status) {
+    return false;
+  }
+
+  return (
+    status.accessibilityActive &&
+    status.usageAccessGranted &&
+    status.overlayPermissionGranted &&
+    status.batteryOptimizationIgnored &&
+    status.scheduleActive
+  );
+}
+
+type PermissionWizardStep = "intro" | "restricted" | "accessibility" | "usage" | "overlay" | "battery" | "done";
+
+function PermissionWizard({
+  status,
+  open,
+  onRefresh,
+  onComplete,
+}: {
+  status: NativeProtectionStatus | null;
+  open: boolean;
+  onRefresh: () => void;
+  onComplete: () => void;
+}) {
+  const [started, setStarted] = useState(false);
+  const nextStep = (() => {
+    if (!open) {
+      return "done" as PermissionWizardStep;
+    }
+    if (!started) {
+      return "intro" as PermissionWizardStep;
+    }
+    if (!status) {
+      return "intro" as PermissionWizardStep;
+    }
+    if (status.restrictedSettingsRequired && !status.accessibilityEnabled) {
+      return "restricted" as PermissionWizardStep;
+    }
+    if (!status.accessibilityEnabled || !status.accessibilityActive) {
+      return "accessibility" as PermissionWizardStep;
+    }
+    if (!status.usageAccessGranted) {
+      return "usage" as PermissionWizardStep;
+    }
+    if (!status.overlayPermissionGranted) {
+      return "overlay" as PermissionWizardStep;
+    }
+    if (!status.batteryOptimizationIgnored) {
+      return "battery" as PermissionWizardStep;
+    }
+    return "done" as PermissionWizardStep;
+  })();
+
+  useEffect(() => {
+    if (nextStep === "done") {
+      onComplete();
+    }
+  }, [nextStep, onComplete]);
+
+  const stepConfig = {
+    intro: {
+      title: "Last Puff needs permissions to protect your focus",
+      description: "We'll open the exact Android screens and move forward as soon as each permission is granted.",
+      primary: "Start Setup",
+    },
+    restricted: {
+      title: "Allow Restricted Settings",
+      description: "To let Last Puff block distracting apps, Android requires one extra approval.",
+      primary: "Open App Info",
+    },
+    accessibility: {
+      title: "Enable Accessibility",
+      description: "This lets Last Puff detect the foreground app and block it instantly.",
+      primary: "Enable Protection",
+      secondary: "Open Accessibility",
+    },
+    usage: {
+      title: "Allow Usage Access",
+      description: "This lets Last Puff confirm what app is in the foreground while you use your phone.",
+      primary: "Open Usage Access",
+    },
+    overlay: {
+      title: "Allow Overlay Permission",
+      description: "This shows the full-screen blocker whenever a protected app opens.",
+      primary: "Open Overlay Settings",
+    },
+    battery: {
+      title: "Disable Battery Optimization",
+      description: "This keeps blocking reliable in the background, after reboot, and during battery saver modes.",
+      primary: "Disable Battery Optimization",
+    },
+    done: {
+      title: "Protection Ready",
+      description: "All required permissions are active. Last Puff can monitor and block continuously now.",
+      primary: "Continue",
+    },
+  } satisfies Record<PermissionWizardStep, { title: string; description: string; primary: string; secondary?: string }>;
+
+  useEffect(() => {
+    if (!open) {
+      setStarted(false);
+    }
+  }, [open]);
+
+  if (!open) {
+    return null;
+  }
+
+  const activeConfig = stepConfig[nextStep];
+
+  const handlePrimary = () => {
+    if (nextStep === "intro") {
+      setStarted(true);
+      onRefresh();
+      return;
+    }
+    if (nextStep === "done") {
+      onRefresh();
+      return;
+    }
+    if (nextStep === "restricted") {
+      void openNativeAppInfo();
+      return;
+    }
+    if (nextStep === "accessibility") {
+      void openNativeAccessibilitySettings();
+      return;
+    }
+    if (nextStep === "usage") {
+      void openNativeUsageAccessSettings();
+      return;
+    }
+    if (nextStep === "overlay") {
+      void openNativeOverlaySettings();
+      return;
+    }
+    if (nextStep === "battery") {
+      void requestNativeBatteryOptimizationExemption().then(onRefresh).catch(() => {});
+    }
+  };
+
+  const handleSecondary = () => {
+    if (nextStep === "restricted") {
+      void openNativeAccessibilitySettings();
+    } else if (nextStep === "accessibility") {
+      void openNativeAccessibilitySettings();
+    }
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[120] bg-black/45 px-4 py-4 backdrop-blur-md"
+    >
+      <div className="mx-auto flex h-full w-full max-w-3xl items-center justify-center">
+        <GlassCard className="max-h-[92vh] w-full overflow-hidden border border-foreground/10">
+          <div className="p-5">
+            <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Permission Wizard</div>
+            <div className="mt-2 text-2xl font-semibold text-foreground">{activeConfig.title}</div>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">{activeConfig.description}</p>
+
+            {nextStep === "restricted" ? (
+              <div className="mt-4 rounded-2xl border border-foreground/10 bg-card p-4 text-sm text-foreground">
+                <ol className="space-y-2">
+                  <li>1. Open App Info</li>
+                  <li>2. Tap the 3 dots</li>
+                  <li>3. Allow Restricted Settings</li>
+                </ol>
+              </div>
+            ) : null}
+
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <button
+                onClick={handlePrimary}
+                className="rounded-2xl bg-black px-4 py-3 text-sm font-semibold text-white shadow-sm"
+              >
+                {activeConfig.primary}
+              </button>
+              {activeConfig.secondary ? (
+                <button
+                  onClick={handleSecondary}
+                  className="rounded-2xl border border-foreground/10 bg-background px-4 py-3 text-sm font-semibold text-foreground shadow-sm"
+                >
+                  {activeConfig.secondary}
+                </button>
+              ) : (
+                <button
+                  onClick={onRefresh}
+                  className="rounded-2xl border border-foreground/10 bg-background px-4 py-3 text-sm font-semibold text-foreground shadow-sm"
+                >
+                  Re-check permissions
+                </button>
+              )}
+            </div>
+
+            <div className="mt-5 grid gap-3">
+              {[
+                ["Protection Ready", isProtectionReady(status)],
+                ["Permissions Missing", !isProtectionReady(status)],
+                ["Protection Active", Boolean(status?.accessibilityActive && status?.scheduleActive && status?.blockingActive)],
+              ].map(([label, active]) => (
+                <div key={label as string} className="flex items-center justify-between rounded-2xl border border-foreground/10 bg-background px-4 py-3">
+                  <div className="text-sm font-semibold text-foreground">{label as string}</div>
+                  <div className={`text-xs font-semibold ${active ? "text-emerald-600" : "text-muted-foreground"}`}>{active ? "Ready" : "Pending"}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </GlassCard>
+      </div>
+    </motion.div>
+  );
 }
 
 function defaultEndHour(startHour: number, startMinute: number) {
@@ -223,11 +443,29 @@ function ControlPage() {
   const [errorMessage, setErrorMessage] = useState("");
   const [installedApps, setInstalledApps] = useState<CatalogApp[]>([]);
   const [nativeProtectionStatus, setNativeProtectionStatus] = useState<NativeProtectionStatus | null>(null);
+  const [permissionWizardComplete, setPermissionWizardComplete] = useState(false);
+  const [permissionWizardOpen, setPermissionWizardOpen] = useState(false);
   const hasLoadedRef = useRef(false);
   const installedAppsLoadedRef = useRef(false);
-  const lastScheduleSyncRef = useRef("");
   const lastNativeSyncRef = useRef("");
   const blockTime = formatBlockWindow(blockHour, blockMinute, blockEndHour, blockEndMinute);
+
+  const refreshNativeProtectionStatus = async () => {
+    if (!isNativeAndroid()) {
+      return null;
+    }
+
+    try {
+      const status = await getNativeProtectionStatus();
+      setNativeProtectionStatus(status);
+      return status;
+    } catch (error) {
+      if (!isNativePluginUnavailable(error)) {
+        throw error;
+      }
+      return null;
+    }
+  };
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -275,6 +513,15 @@ function ControlPage() {
   }, []);
 
   useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const complete = window.localStorage.getItem(CONTROL_PERMISSION_WIZARD_KEY) === "true";
+    setPermissionWizardComplete(complete);
+  }, []);
+
+  useEffect(() => {
     if (!hydrated || !isAuthenticated) {
       return;
     }
@@ -299,14 +546,7 @@ function ControlPage() {
           }
         }
         if (isNativeAndroid()) {
-          try {
-            const status = await getNativeProtectionStatus();
-            setNativeProtectionStatus(status);
-          } catch (error) {
-            if (!isNativePluginUnavailable(error)) {
-              throw error;
-            }
-          }
+          await refreshNativeProtectionStatus();
         }
       } catch (error) {
         setErrorMessage(error instanceof Error ? error.message : "Unable to load app controls.");
@@ -319,56 +559,51 @@ function ControlPage() {
     void loadApps();
   }, [hydrated, isAuthenticated]);
 
-  useEffect(() => {
-    if (!hydrated || !isAuthenticated || !hasLoadedRef.current) {
+  const saveSchedule = async () => {
+    if (!hydrated || !isAuthenticated) {
       return;
     }
 
-    const scheduleKey = `${blockHour}:${blockMinute}:${blockEndHour}:${blockEndMinute}`;
-    if (lastScheduleSyncRef.current === scheduleKey) {
-      return;
-    }
-
-    const timeout = window.setTimeout(async () => {
-      try {
-        setSavingSchedule(true);
-        await apiRequest("/api/apps/schedule", {
-          method: "POST",
-          body: JSON.stringify({ blockTime: `${formatTime24(blockHour, blockMinute)}-${formatTime24(blockEndHour, blockEndMinute)}`, frequency: "daily", enabled: true }),
-        });
-        if (isNativeAndroid()) {
-          try {
-            const status = await syncNativeProtectionConfig({
-              apps: apps.map((app) => ({
-                appName: app.app_name,
-                packageName: app.package_name || app.app_name,
-                isActive: app.is_active,
-              })),
-              blockTime: `${formatTime24(blockHour, blockMinute)}-${formatTime24(blockEndHour, blockEndMinute)}`,
-              blockHour,
-              blockMinute,
-              blockEndHour,
-              blockEndMinute,
-              enabled: true,
-              repeatType: "daily",
-            });
-            setNativeProtectionStatus(status);
-          } catch (error) {
-            if (!isNativePluginUnavailable(error)) {
-              throw error;
-            }
+    try {
+      setSavingSchedule(true);
+      setErrorMessage("");
+      await apiRequest("/api/apps/schedule", {
+        method: "POST",
+        body: JSON.stringify({
+          blockTime: `${formatTime24(blockHour, blockMinute)}-${formatTime24(blockEndHour, blockEndMinute)}`,
+          frequency: "daily",
+          enabled: true,
+        }),
+      });
+      if (isNativeAndroid()) {
+        try {
+          const status = await syncNativeProtectionConfig({
+            apps: apps.map((app) => ({
+              appName: app.app_name,
+              packageName: app.package_name || app.app_name,
+              isActive: app.is_active,
+            })),
+            blockTime: `${formatTime24(blockHour, blockMinute)}-${formatTime24(blockEndHour, blockEndMinute)}`,
+            blockHour,
+            blockMinute,
+            blockEndHour,
+            blockEndMinute,
+            enabled: true,
+            repeatType: "daily",
+          });
+          setNativeProtectionStatus(status);
+        } catch (error) {
+          if (!isNativePluginUnavailable(error)) {
+            throw error;
           }
         }
-        lastScheduleSyncRef.current = scheduleKey;
-      } catch (error) {
-        setErrorMessage(error instanceof Error ? error.message : "Unable to save schedule.");
-      } finally {
-        setSavingSchedule(false);
       }
-    }, 500);
-
-    return () => window.clearTimeout(timeout);
-  }, [apps, blockEndHour, blockEndMinute, blockHour, blockMinute, blockTime, hydrated, isAuthenticated]);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to save schedule.");
+    } finally {
+      setSavingSchedule(false);
+    }
+  };
 
   useEffect(() => {
     if (!hydrated || !isAuthenticated || !isNativeAndroid() || !hasLoadedRef.current) {
@@ -473,6 +708,8 @@ function ControlPage() {
     [apps],
   );
 
+  const blockedApps = useMemo(() => appsToRender.filter((item) => item.isProtected), [appsToRender]);
+
   useEffect(() => {
     if (typeof window === "undefined" || !apps.length) {
       return;
@@ -490,6 +727,56 @@ function ControlPage() {
       }),
     );
   }, [apps, blockEndHour, blockEndMinute, blockHour, blockMinute, blockTime]);
+
+  const completePermissionWizard = () => {
+    setPermissionWizardComplete(true);
+    setPermissionWizardOpen(false);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(CONTROL_PERMISSION_WIZARD_KEY, "true");
+    }
+  };
+
+  useEffect(() => {
+    if (!isNativeAndroid()) {
+      return;
+    }
+
+    if (isProtectionReady(nativeProtectionStatus)) {
+      completePermissionWizard();
+      return;
+    }
+
+    if (!permissionWizardComplete) {
+      setPermissionWizardOpen(true);
+    }
+  }, [nativeProtectionStatus, permissionWizardComplete]);
+
+  useEffect(() => {
+    if (!isNativeAndroid() || !permissionWizardOpen) {
+      return;
+    }
+
+    const refresh = () => {
+      void refreshNativeProtectionStatus();
+    };
+
+    const interval = window.setInterval(refresh, 1200);
+    const handleFocus = () => refresh();
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        refresh();
+      }
+    };
+
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [permissionWizardOpen]);
 
   const openPicker = () => {
     const loadInstalledApps = async () => {
@@ -593,142 +880,54 @@ function ControlPage() {
 
   return (
     <AppShell>
+      <PermissionWizard
+        open={permissionWizardOpen}
+        status={nativeProtectionStatus}
+        onRefresh={() => void refreshNativeProtectionStatus()}
+        onComplete={completePermissionWizard}
+      />
       <div className="mb-6">
         <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Protection</div>
         <h1 className="mt-2 text-2xl font-semibold text-foreground">App Controls</h1>
       </div>
 
       <GlassCard glow="red" className="relative mb-6">
-        <div className="flex items-start gap-4">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-foreground/10 bg-card shadow-sm">
-            <ShieldAlert className="h-6 w-6 text-rose-600" strokeWidth={2} />
-          </div>
-          <div className="flex-1">
-              <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Status</div>
-            <div className="mt-1 text-lg font-semibold text-foreground">
-              {unlockedApps ? "Protection Disabled" : selectedAppsCount ? "Protection Active" : "Protection Idle"}
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-foreground/10 bg-card shadow-sm">
+              <ShieldAlert className="h-6 w-6 text-rose-600" strokeWidth={2} />
             </div>
-            <div className="mt-1 text-xs text-muted-foreground">
-              {unlockedApps ? "Apps are accessible. Proceed with caution." : `${selectedAppsCount} apps blocked. You're safe.`}
-            </div>
-          </div>
-        </div>
-      </GlassCard>
-
-      {isNativeAndroid() ? (
-        <GlassCard className="mb-6 border border-foreground/10">
-          <div className="flex items-start justify-between gap-4">
             <div>
-              <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Android Protection</div>
+              <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Status</div>
               <div className="mt-1 text-lg font-semibold text-foreground">
-                {nativeProtectionStatus?.accessibilityActive ? "Protection Active" : nativeProtectionStatus?.accessibilityEnabled ? "Accessibility enabled" : "Accessibility Disabled"}
+                {unlockedApps
+                  ? "Protection Disabled"
+                  : isProtectionReady(nativeProtectionStatus)
+                    ? "Protection Ready"
+                    : selectedAppsCount
+                      ? "Permissions Missing"
+                      : "Protection Idle"}
               </div>
               <div className="mt-1 text-xs text-muted-foreground">
-                {nativeProtectionStatus?.accessibilityActive
-                  ? "The blocker is listening for launches and foreground switches."
-                  : nativeProtectionStatus?.accessibilityEnabled
-                    ? "Accessibility is enabled, but the service has not reported active yet."
-                    : "Turn on Android accessibility for Last Puff so selected apps can actually be blocked."}
+                {unlockedApps
+                  ? "Apps are accessible. Proceed with caution."
+                  : isProtectionReady(nativeProtectionStatus)
+                    ? `${selectedAppsCount} apps are protected and the blocker is active.`
+                    : "Finish the guided permissions flow to activate blocking."}
               </div>
             </div>
+          </div>
+
+          {isNativeAndroid() ? (
             <button
-              onClick={() => void openNativeAccessibilitySettings()}
-              className="rounded-2xl bg-black px-4 py-3 text-xs font-semibold text-white"
+              onClick={() => setPermissionWizardOpen(true)}
+              className="rounded-2xl border border-foreground/10 bg-background px-4 py-3 text-xs font-semibold text-foreground shadow-sm"
             >
-              Open Settings
+              Review Permissions
             </button>
-          </div>
-
-          <div className="mt-4 grid grid-cols-4 gap-3">
-            <div className="rounded-2xl border border-foreground/10 bg-card p-3 shadow-sm">
-              <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Protected</div>
-              <div className="mt-2 text-lg font-semibold text-foreground">{nativeProtectionStatus?.blockedAppsCount ?? selectedAppsCount}</div>
-            </div>
-            <div className="rounded-2xl border border-foreground/10 bg-card p-3 shadow-sm">
-              <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Schedule</div>
-              <div className="mt-2 text-lg font-semibold text-foreground">{nativeProtectionStatus?.scheduleActive ? "Active" : "Idle"}</div>
-            </div>
-            <div className="rounded-2xl border border-foreground/10 bg-card p-3 shadow-sm">
-              <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Monitoring</div>
-              <div className="mt-2 text-lg font-semibold text-foreground">{nativeProtectionStatus?.monitoringActive ? "Running" : "Stopped"}</div>
-            </div>
-            <div className="rounded-2xl border border-foreground/10 bg-card p-3 shadow-sm">
-              <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Battery</div>
-              <div className="mt-2 text-lg font-semibold text-foreground">{nativeProtectionStatus?.batteryOptimizationIgnored ? "Ignored" : "Needs Exemption"}</div>
-            </div>
-          </div>
-
-          {!nativeProtectionStatus?.batteryOptimizationIgnored ? (
-            <div className="mt-3 flex items-center justify-between rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
-              <div>
-                <div className="text-sm font-semibold text-amber-950">Battery optimization is still enabled</div>
-                <div className="text-xs text-amber-900">Allow Last Puff to ignore optimization so the blocker survives battery saver modes.</div>
-              </div>
-              <button
-                onClick={() => void requestNativeBatteryOptimizationExemption().then(setNativeProtectionStatus).catch(() => {})}
-                className="rounded-full bg-amber-950 px-4 py-2 text-xs font-semibold text-white"
-              >
-                Allow
-              </button>
-            </div>
           ) : null}
-
-          <div className="mt-4 grid grid-cols-2 gap-3">
-            <div className="rounded-2xl border border-foreground/10 bg-card p-3 shadow-sm">
-              <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Overlay</div>
-              <div className="mt-2 text-lg font-semibold text-foreground">{nativeProtectionStatus?.overlayPermissionGranted ? "Granted" : "Needed"}</div>
-            </div>
-            <div className="rounded-2xl border border-foreground/10 bg-card p-3 shadow-sm">
-              <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Usage Access</div>
-              <div className="mt-2 text-lg font-semibold text-foreground">{nativeProtectionStatus?.usageAccessGranted ? "Granted" : "Needed"}</div>
-            </div>
-            <div className="rounded-2xl border border-foreground/10 bg-card p-3 shadow-sm">
-              <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Service</div>
-              <div className="mt-2 text-lg font-semibold text-foreground">{nativeProtectionStatus?.serviceRunning ? "Running" : "Stopped"}</div>
-            </div>
-            <div className="rounded-2xl border border-foreground/10 bg-card p-3 shadow-sm">
-              <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Window</div>
-              <div className="mt-2 text-lg font-semibold text-foreground">{nativeProtectionStatus?.blockWindowLabel ?? blockTime}</div>
-            </div>
-          </div>
-
-          <div className="mt-4 grid grid-cols-2 gap-3">
-            <button
-              onClick={() => void openNativeOverlaySettings()}
-              className="rounded-2xl border border-foreground/10 bg-background px-4 py-3 text-xs font-semibold text-foreground shadow-sm"
-            >
-              Overlay Settings
-            </button>
-            <button
-              onClick={() => void openNativeUsageAccessSettings()}
-              className="rounded-2xl border border-foreground/10 bg-background px-4 py-3 text-xs font-semibold text-foreground shadow-sm"
-            >
-              Usage Access
-            </button>
-            <button
-              onClick={() => void openNativeAccessibilitySettings()}
-              className="rounded-2xl border border-foreground/10 bg-background px-4 py-3 text-xs font-semibold text-foreground shadow-sm"
-            >
-              Accessibility
-            </button>
-            <button
-              onClick={() => void requestNativeBatteryOptimizationExemption().then(setNativeProtectionStatus).catch(() => {})}
-              className="rounded-2xl border border-foreground/10 bg-background px-4 py-3 text-xs font-semibold text-foreground shadow-sm"
-            >
-              Battery Exemption
-            </button>
-          </div>
-
-          <details className="mt-4 rounded-2xl border border-foreground/10 bg-background p-4 shadow-sm">
-            <summary className="cursor-pointer text-sm font-semibold text-foreground">OEM setup hints</summary>
-            <div className="mt-3 space-y-2 text-xs text-muted-foreground">
-              <p>Samsung: allow Last Puff in battery, background, and auto-start settings.</p>
-              <p>Xiaomi: enable Autostart and remove battery restrictions.</p>
-              <p>Oppo, Vivo, Realme, OnePlus: allow startup, background activity, and lock the app in recents if available.</p>
-            </div>
-          </details>
-        </GlassCard>
-      ) : null}
+        </div>
+      </GlassCard>
 
       <GlassCard className="mb-6">
         <div className="mb-5 flex items-center gap-3">
@@ -745,49 +944,51 @@ function ControlPage() {
         <div className="grid gap-4">
           <div className="rounded-2xl border border-foreground/10 bg-card p-4 shadow-sm">
             <div className="mb-2 text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Block Time</div>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="grid flex-1 grid-cols-2 gap-3">
+                <select
+                  value={blockHour}
+                  onChange={(event) => {
+                    const nextHour = Number(event.target.value);
+                    setBlockHour(nextHour);
+                    setBlockEndHour(defaultEndHour(nextHour, blockMinute));
+                    setBlockEndMinute(defaultEndMinute(blockMinute));
+                  }}
+                  className="h-12 w-full rounded-2xl border border-foreground/10 bg-background px-4 text-sm font-semibold text-foreground shadow-sm outline-none"
+                >
+                  {Array.from({ length: 24 }, (_, hour) => (
+                    <option key={hour} value={hour}>
+                      {String(hour).padStart(2, "0")}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={blockMinute}
+                  onChange={(event) => {
+                    const nextMinute = Number(event.target.value);
+                    setBlockMinute(nextMinute);
+                    setBlockEndHour(defaultEndHour(blockHour, nextMinute));
+                    setBlockEndMinute(defaultEndMinute(nextMinute));
+                  }}
+                  className="h-12 w-full rounded-2xl border border-foreground/10 bg-background px-4 text-sm font-semibold text-foreground shadow-sm outline-none"
+                >
+                  {Array.from({ length: 60 }, (_, minute) => (
+                    <option key={minute} value={minute}>
+                      {String(minute).padStart(2, "0")}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <motion.button
                 whileTap={{ scale: 0.98 }}
-                onClick={() => {
-                  if (isNativeAndroid()) {
-                    void pickNativeBlockTime()
-                      .then((result) => {
-                        if (!result) {
-                          return;
-                        }
-                        setBlockHour(result.blockHour ?? result.hour);
-                        setBlockMinute(result.blockMinute ?? result.minute);
-                        setBlockEndHour(result.blockEndHour ?? result.blockHour ?? result.hour);
-                        setBlockEndMinute(result.blockEndMinute ?? result.minute);
-                      })
-                      .catch((error: unknown) => {
-                        setErrorMessage(error instanceof Error ? error.message : "Unable to open the time picker.");
-                      });
-                    return;
-                  }
-
-                  const nextValue = window.prompt("Enter block window as HH:MM-HH:MM", `${formatTime24(blockHour, blockMinute)}-${formatTime24(blockEndHour, blockEndMinute)}`);
-                  if (!nextValue) {
-                    return;
-                  }
-
-                  const parsedWindow = parseBlockWindow(nextValue);
-                  if (parsedWindow) {
-                    setBlockHour(parsedWindow.startHour);
-                    setBlockMinute(parsedWindow.startMinute);
-                    setBlockEndHour(parsedWindow.endHour);
-                    setBlockEndMinute(parsedWindow.endMinute);
-                  }
-                }}
-                className="h-12 w-full rounded-2xl border border-foreground/10 bg-background px-4 text-left text-sm font-semibold text-foreground shadow-sm"
+                onClick={() => void saveSchedule()}
+                disabled={savingSchedule}
+                className="h-12 rounded-2xl bg-black px-5 text-sm font-semibold text-white shadow-sm transition-all hover:bg-black/90 disabled:cursor-not-allowed disabled:opacity-70"
               >
-                {blockTime}
+                {savingSchedule ? "Saving..." : "Save"}
               </motion.button>
-              <div className="rounded-2xl border border-foreground/10 bg-background px-4 py-3 text-sm font-semibold text-foreground">
-                Daily
-              </div>
             </div>
-            <div className="mt-2 text-[11px] text-muted-foreground">{savingSchedule ? "Saving schedule..." : "Schedule saved automatically."}</div>
+            <div className="mt-2 text-[11px] text-muted-foreground">{savingSchedule ? "Saving schedule..." : "Schedule saves when you tap Save."}</div>
           </div>
 
           <div className="rounded-2xl border border-foreground/10 bg-card p-4 shadow-sm">
@@ -811,57 +1012,10 @@ function ControlPage() {
                 : "On web preview this falls back to the demo app catalog."}
             </div>
 
-            <div className="mt-4 space-y-2">
-              {appsToRender.length ? (
-                appsToRender.map((item, index) => {
-                  const Icon = item.icon;
-                  const active = item.isProtected;
-
-                  return (
-                    <motion.button
-                      key={item.id}
-                      initial={{ opacity: 0, y: 8 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: index * 0.04 }}
-                      onClick={() => void toggleSelectedApp(item)}
-                      className={`flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-all ${
-                        active
-                          ? "border-foreground bg-foreground text-background"
-                          : "border-foreground/10 bg-background text-foreground hover:bg-muted/60"
-                      }`}
-                    >
-                      <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${active ? "bg-background/10" : "bg-foreground/5"}`}>
-                        <Icon className="h-4 w-4" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="text-sm font-semibold">{item.app}</div>
-                        <div className={`mt-1 text-[11px] ${active ? "text-background/75" : "text-muted-foreground"}`}>
-                          Tap to block or unblock this app
-                        </div>
-                      </div>
-                      <div className={`flex h-6 w-6 items-center justify-center rounded-full border ${active ? "border-background bg-background text-foreground" : "border-foreground/10 bg-card text-foreground"}`}>
-                        {active ? "OK" : ""}
-                      </div>
-                    </motion.button>
-                  );
-                })
-              ) : (
-                <div className="rounded-2xl border border-dashed border-foreground/10 bg-background px-4 py-5 text-center">
-                  <div className="text-sm font-semibold text-foreground">No protected apps selected yet.</div>
-                  <div className="mt-1 text-xs text-muted-foreground">Choose apps that trigger cravings or impulsive behavior.</div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between rounded-2xl border border-foreground/10 bg-background px-4 py-3 shadow-sm">
-            <div>
-              <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Selected Apps</div>
-              <div className="mt-1 text-sm font-semibold text-foreground">{selectedAppsCount} chosen</div>
-            </div>
-            <div className="text-right">
-              <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Time</div>
-              <div className="mt-1 text-sm font-semibold text-foreground">{blockTime}</div>
+            <div className="mt-4 text-xs text-muted-foreground">
+              {selectedAppsCount
+                ? `${selectedAppsCount} apps selected. Saved silently and shown only in Blocked Applications.`
+                : "Select apps to protect from the picker above. They are saved silently and shown only in Blocked Applications."}
             </div>
           </div>
         </div>
@@ -872,7 +1026,7 @@ function ControlPage() {
       </div>
       {errorMessage ? <div className="mb-4 text-sm text-red-500">{errorMessage}</div> : null}
       <div className="space-y-2.5">
-        {appsToRender.map((item, index) => (
+        {blockedApps.map((item, index) => (
           <motion.div
             key={item.id}
             initial={{ opacity: 0, x: -10 }}
@@ -883,13 +1037,6 @@ function ControlPage() {
               <div className="flex items-center gap-3">
                 <div className="relative flex h-10 w-10 items-center justify-center rounded-2xl bg-foreground/5">
                   <item.icon className="h-5 w-5" />
-                  <div
-                    className={`absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full border border-background text-[10px] font-bold ${
-                      unlockedApps ? "bg-emerald-400 text-background" : item.isProtected ? "bg-primary text-primary-foreground" : "bg-muted text-foreground"
-                    }`}
-                  >
-                    {unlockedApps ? "OK" : item.isProtected ? "ON" : "OFF"}
-                  </div>
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="text-sm font-medium text-foreground">{item.app}</div>
@@ -897,60 +1044,17 @@ function ControlPage() {
                 </div>
                 <button
                   onClick={() => {
-                    if (unlockedApps) {
-                      appStore.relockApps();
-                      void relockNativeProtection()
-                        .then((status) => setNativeProtectionStatus(status))
-                        .catch(() => {});
-                      return;
-                    }
                     setChallengeOpen(true);
                   }}
-                  className={`rounded-2xl px-3 py-1.5 text-[11px] font-medium transition-all ${
-                    unlockedApps
-                      ? "border border-emerald-400/30 bg-emerald-50 text-emerald-600"
-                      : "border border-primary/20 bg-primary text-primary-foreground shadow-sm"
-                  }`}
+                  className="rounded-2xl border border-primary/20 bg-primary px-3 py-1.5 text-[11px] font-medium text-primary-foreground shadow-sm transition-all"
                 >
-                  {unlockedApps ? "Unlocked" : "Verify"}
+                  Unlock
                 </button>
               </div>
             </GlassCard>
           </motion.div>
         ))}
       </div>
-
-      <GlassCard glow="orange" className="mt-6">
-        <div className="flex items-start gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-foreground/5">
-            <BrainCircuit className="h-5 w-5 text-indigo-600" />
-          </div>
-          <div className="flex-1">
-            <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Unlock Verification</div>
-            <div className="mt-1 text-lg font-semibold text-foreground">Mental Stability Challenge</div>
-            <p className="mt-1 text-xs text-muted-foreground">Copy text with 100% accuracy. No shortcuts.</p>
-          </div>
-        </div>
-
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          <div className="rounded-2xl border border-foreground/10 bg-card p-3 shadow-sm">
-            <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Failed</div>
-            <div className="mt-2 text-2xl font-bold text-red-400">{unlockFailures}</div>
-          </div>
-          <div className="rounded-2xl border border-foreground/10 bg-card p-3 shadow-sm">
-            <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Required</div>
-            <div className="mt-2 text-2xl font-bold text-emerald-400">100%</div>
-          </div>
-        </div>
-
-        <button
-          onClick={() => setChallengeOpen(true)}
-          className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground shadow-[0_16px_34px_rgba(15,23,42,0.16)] transition-all hover:bg-primary/90"
-        >
-          <TriangleAlert className="h-4 w-4 text-amber-500" />
-          Start Challenge
-        </button>
-      </GlassCard>
 
       <MentalStabilityChallenge
         open={challengeOpen}
@@ -1107,3 +1211,4 @@ function ControlPage() {
     </AppShell>
   );
 }
+

@@ -28,6 +28,7 @@ interface ProtectionPlugin {
   unlockForToday(): Promise<NativeProtectionStatus>;
   relock(): Promise<NativeProtectionStatus>;
   openAccessibilitySettings(): Promise<void>;
+  openAppInfo(): Promise<void>;
   openOverlaySettings(): Promise<void>;
   openUsageAccessSettings(): Promise<void>;
   requestIgnoreBatteryOptimizations(): Promise<NativeProtectionStatus>;
@@ -49,6 +50,7 @@ export interface NativeProtectionStatus {
   scheduleActive: boolean;
   blockingActive: boolean;
   batteryOptimizationIgnored: boolean;
+  restrictedSettingsRequired: boolean;
   withinBlockedWindow: boolean;
   unlockedForToday: boolean;
   nextAlarmAt?: number;
@@ -165,6 +167,14 @@ export async function openNativeAccessibilitySettings() {
   }
 
   await Protection.openAccessibilitySettings();
+}
+
+export async function openNativeAppInfo() {
+  if (!isNativeAndroid()) {
+    return;
+  }
+
+  await Protection.openAppInfo();
 }
 
 export async function openNativeOverlaySettings() {

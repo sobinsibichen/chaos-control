@@ -1,5 +1,5 @@
-import type { DashboardPayload } from "@/lib/intelligence";
-import type { SmokeDnaRecord, VoiceCommandRecord } from "@/lib/intelligenceApi";
+import type { ActivityRow, DashboardPayload } from "@/lib/intelligence";
+import type { SmokeDnaRecord } from "@/lib/intelligenceApi";
 import type { CravingPredictionRecord } from "@/lib/cravingApi";
 import type { SmokeReplayRecord } from "@/lib/replayApi";
 
@@ -14,8 +14,8 @@ export interface InsightsSharedData {
   replayHistory: SmokeReplayRecord[];
   cravingHistory: CravingPredictionRecord[];
   liveCraving: CravingPredictionRecord | undefined;
-  voiceHistory: VoiceCommandRecord[];
   profileLabel: string;
+  activity: ActivityRow[];
   hourlyCraving: Array<{ hour: number; label: string; intensity: number }>;
   weeklyReplay: Array<{ day: string; value: number }>;
   replayHeatmap: Array<Array<{ key: string; intensity: number }>>;

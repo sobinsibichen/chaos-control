@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/api";
 import { useAppStore } from "@/lib/app-store";
 import { createCravingPrediction, fetchLiveCravingPrediction, listCravingPredictions, type CravingPredictionRecord } from "@/lib/cravingApi";
-import { createSmokeDna, listSmokeDna, listVoiceCommands } from "@/lib/intelligenceApi";
+import { createSmokeDna, listSmokeDna } from "@/lib/intelligenceApi";
 import { buildHeatmap, buildHourlyCravingData, buildWeeklyReplay, resolveSmokingProfile, type ActivityRow, type DashboardPayload, type RoastAnalyticsPayload } from "@/lib/intelligence";
 import { queryKeys } from "@/lib/query-keys";
 import { fetchMonthlyReplay, fetchYearlyReplay, listSmokeReplay } from "@/lib/replayApi";
@@ -48,7 +48,7 @@ export function useIntelligenceData() {
 
   const activityQuery = useQuery({
     queryKey: queryKeys.activity,
-    queryFn: () => apiRequest<{ success: boolean; activity: ActivityRow[] }>("/api/activity/recent?limit=12"),
+    queryFn: () => apiRequest<{ success: boolean; activity: ActivityRow[] }>("/api/activity/recent?limit=30"),
     enabled: queriesEnabled,
     refetchInterval: 60000,
   });
@@ -88,12 +88,6 @@ export function useIntelligenceData() {
     queryFn: fetchLiveCravingPrediction,
     enabled: queriesEnabled,
     refetchInterval: 60000,
-  });
-
-  const voiceQuery = useQuery({
-    queryKey: queryKeys.voiceCommands,
-    queryFn: () => listVoiceCommands(20),
-    enabled: queriesEnabled,
   });
 
   const createSmokeDnaMutation = useMutation({
@@ -146,7 +140,6 @@ export function useIntelligenceData() {
   const replayHistory = replayHistoryQuery.data ?? [];
   const cravingHistory = cravingHistoryQuery.data ?? [];
   const liveCraving = liveCravingQuery.data;
-  const voiceHistory = voiceQuery.data?.items ?? [];
 
   const profileLabel = smokeDna?.smokerType ?? resolveSmokingProfile(dashboard, analytics);
   const hourlyCraving = useMemo(
@@ -178,7 +171,6 @@ export function useIntelligenceData() {
     replayHistory,
     cravingHistory,
     liveCraving,
-    voiceHistory,
     profileLabel,
     hourlyCraving,
     weeklyReplay,
@@ -191,7 +183,7 @@ export function useIntelligenceData() {
       monthlyReplayQuery.isLoading ||
       yearlyReplayQuery.isLoading ||
       liveCravingQuery.isLoading ||
-      voiceQuery.isLoading,
+      false,
     error:
       (dashboardQuery.error instanceof Error && dashboardQuery.error.message) ||
       (analyticsQuery.error instanceof Error && analyticsQuery.error.message) ||
@@ -199,7 +191,6 @@ export function useIntelligenceData() {
       (monthlyReplayQuery.error instanceof Error && monthlyReplayQuery.error.message) ||
       (yearlyReplayQuery.error instanceof Error && yearlyReplayQuery.error.message) ||
       (liveCravingQuery.error instanceof Error && liveCravingQuery.error.message) ||
-      (voiceQuery.error instanceof Error && voiceQuery.error.message) ||
       "",
   };
 }

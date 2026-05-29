@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="last_puff_voice_queries">
+        <item>$text1</item>
+        <item>how many cigarettes i smoked $text1</item>
+        <item>how much money i saved $text1</item>
+        <item>how much money i wasted $text1</item>
+        <item>show $text1 stats</item>
+        <item>show my streak</item>
+        <item>motivate me</item>
+    </string-array>
+</resources>

@@ -20,6 +20,10 @@ export function SmokeDnaPanel({
   radarData: Array<{ metric: string; value: number }>;
   insightCards: string[];
 }) {
+  const nightCravingValues = data.hourlyCraving.slice(21).map((item) => item.intensity);
+  const nightCravingPeak = nightCravingValues.length ? Math.max(...nightCravingValues) : 0;
+  const morningBaseline = data.hourlyCraving[9]?.intensity ?? 0;
+
   return (
     <div className="space-y-4">
       <GlassCard glow="orange" className="border border-foreground/10">
@@ -28,7 +32,7 @@ export function SmokeDnaPanel({
             <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Smoking personality</div>
             <div className="mt-2 text-2xl font-semibold text-foreground">{data.profileLabel}</div>
             <p className="mt-2 text-sm text-muted-foreground">
-              {data.smokeDna?.insights[0] ?? `You smoke ${(Math.max(...data.hourlyCraving.slice(21).map((item) => item.intensity)) - (data.hourlyCraving[9]?.intensity ?? 0)).toFixed(0)}% more after 9PM.`}
+              {data.smokeDna?.insights[0] ?? `You smoke ${Math.max(0, nightCravingPeak - morningBaseline).toFixed(0)}% more after 9PM.`}
             </p>
           </div>
           <Sparkles className="h-6 w-6 animate-float text-amber-500" />

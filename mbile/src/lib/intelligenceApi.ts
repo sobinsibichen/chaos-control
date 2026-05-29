@@ -27,16 +27,6 @@ export interface SmokeDnaRecord {
   updatedAt: string;
 }
 
-export interface VoiceCommandRecord {
-  id: number;
-  commandText: string;
-  aiResponse: string;
-  commandIntent: string;
-  executionStatus: string;
-  metadata: Record<string, unknown>;
-  createdAt: string;
-}
-
 export interface RitualSessionRecord {
   id: number;
   mood: string;
@@ -88,16 +78,6 @@ type SmokeDnaRow = {
   raw_metrics: Record<string, number>;
   created_at: string;
   updated_at: string;
-};
-
-type VoiceCommandRow = {
-  id: number;
-  command_text: string;
-  ai_response: string;
-  command_intent: string;
-  execution_status: string;
-  metadata: Record<string, unknown>;
-  created_at: string;
 };
 
 type RitualSessionRow = {
@@ -152,18 +132,6 @@ function mapSmokeDna(row: SmokeDnaRow): SmokeDnaRecord {
     rawMetrics: row.raw_metrics ?? {},
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-  };
-}
-
-function mapVoiceCommand(row: VoiceCommandRow): VoiceCommandRecord {
-  return {
-    id: row.id,
-    commandText: row.command_text,
-    aiResponse: row.ai_response,
-    commandIntent: row.command_intent,
-    executionStatus: row.execution_status,
-    metadata: row.metadata ?? {},
-    createdAt: row.created_at,
   };
 }
 
@@ -237,25 +205,6 @@ export async function updateSmokeDna(id: number, payload: Partial<SmokeDnaRecord
     body: JSON.stringify(payload),
   });
   return mapSmokeDna(response.data);
-}
-
-export async function listVoiceCommands(limit = 20) {
-  const response = await apiRequest<ApiResponse<PagedPayload<VoiceCommandRow>>>(`/api/voice-commands?limit=${limit}`);
-  return mapPaged(response.data, mapVoiceCommand);
-}
-
-export async function createVoiceCommand(payload: {
-  commandText: string;
-  aiResponse: string;
-  commandIntent: string;
-  executionStatus: string;
-  metadata?: Record<string, unknown>;
-}) {
-  const response = await apiRequest<ApiResponse<VoiceCommandRow>>("/api/voice-commands", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
-  return mapVoiceCommand(response.data);
 }
 
 export async function listRitualSessions(limit = 10) {

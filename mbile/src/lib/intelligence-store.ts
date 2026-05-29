@@ -15,13 +15,6 @@ export interface ScanRecord {
   chemicals: string[];
 }
 
-export interface VoiceCommandRecord {
-  id: string;
-  command: string;
-  response: string;
-  createdAt: string;
-}
-
 export interface ReplayBookmark {
   key: string;
   viewedAt: string;
@@ -29,10 +22,8 @@ export interface ReplayBookmark {
 
 interface IntelligenceState {
   scanHistory: ScanRecord[];
-  voiceHistory: VoiceCommandRecord[];
   replayBookmarks: ReplayBookmark[];
   saveScan: (record: ScanRecord) => void;
-  saveVoiceCommand: (record: VoiceCommandRecord) => void;
   markReplayViewed: (key: string) => void;
 }
 
@@ -40,15 +31,10 @@ export const useIntelligenceStore = create<IntelligenceState>()(
   persist(
     (set) => ({
       scanHistory: [],
-      voiceHistory: [],
       replayBookmarks: [],
       saveScan: (record) =>
         set((state) => ({
           scanHistory: [record, ...state.scanHistory].slice(0, 24),
-        })),
-      saveVoiceCommand: (record) =>
-        set((state) => ({
-          voiceHistory: [record, ...state.voiceHistory].slice(0, 30),
         })),
       markReplayViewed: (key) =>
         set((state) => ({
@@ -63,7 +49,6 @@ export const useIntelligenceStore = create<IntelligenceState>()(
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         scanHistory: state.scanHistory,
-        voiceHistory: state.voiceHistory,
         replayBookmarks: state.replayBookmarks,
       }),
     },

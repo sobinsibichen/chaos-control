@@ -148,6 +148,15 @@ public class ProtectionPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void openAppInfo(PluginCall call) {
+        Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+        intent.setData(Uri.parse("package:" + getContext().getPackageName()));
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        getContext().startActivity(intent);
+        call.resolve();
+    }
+
+    @PluginMethod
     public void openOverlaySettings(PluginCall call) {
         Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION);
         intent.setData(Uri.parse("package:" + getContext().getPackageName()));
@@ -211,9 +220,11 @@ public class ProtectionPlugin extends Plugin {
 
     private JSObject buildStatus() {
         BlockingScheduleEntity schedule = BlockingRepository.getSchedule(getContext());
+        boolean accessibilityEnabled = BlockingEngine.isAccessibilityServiceEnabled(getContext());
+        boolean accessibilityActive = BlockingEngine.isAccessibilityActive(getContext());
         JSObject status = new JSObject();
-        status.put("accessibilityEnabled", BlockingEngine.isAccessibilityServiceEnabled(getContext()));
-        status.put("accessibilityActive", BlockingEngine.isAccessibilityActive(getContext()));
+        status.put("accessibilityEnabled", accessibilityEnabled);
+        status.put("accessibilityActive", accessibilityActive);
         status.put("overlayPermissionGranted", BlockingEngine.isOverlayPermissionGranted(getContext()));
         status.put("usageAccessGranted", BlockingEngine.isUsageAccessGranted(getContext()));
         status.put("monitoringActive", BlockingEngine.isMonitoringActive(getContext()));
@@ -221,6 +232,7 @@ public class ProtectionPlugin extends Plugin {
         status.put("scheduleActive", BlockingEngine.isProtectionScheduleActive(getContext()));
         status.put("blockingActive", BlockingEngine.isWithinBlockedWindow(getContext()) && !BlockingRepository.isUnlockedForToday(getContext()));
         status.put("batteryOptimizationIgnored", BlockingEngine.isBatteryOptimizationIgnored(getContext()));
+        status.put("restrictedSettingsRequired", Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !accessibilityEnabled && !accessibilityActive);
         status.put("blockTime", BlockingRepository.getBlockWindowLabel(getContext()));
         status.put("blockHour", schedule.blockHour);
         status.put("blockMinute", schedule.blockMinute);
