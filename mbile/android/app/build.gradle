@@ -1,5 +1,19 @@
 apply plugin: 'com.android.application'
 
+def buildVersionCode = System.getenv("LAST_PUFF_VERSION_CODE")?.trim()
+if (!buildVersionCode) {
+    def versionFormatter = new java.text.SimpleDateFormat("yyDDDHHmm")
+    versionFormatter.setTimeZone(TimeZone.getTimeZone("UTC"))
+    buildVersionCode = versionFormatter.format(new Date())
+}
+
+def buildVersionName = System.getenv("LAST_PUFF_VERSION_NAME")?.trim()
+if (!buildVersionName) {
+    def versionNameFormatter = new java.text.SimpleDateFormat("yyyy.MM.dd-HHmm")
+    versionNameFormatter.setTimeZone(TimeZone.getTimeZone("UTC"))
+    buildVersionName = "1.0.${versionNameFormatter.format(new Date())}"
+}
+
 android {
     namespace "com.lastpuff.mobile"
     compileSdk rootProject.ext.compileSdkVersion
@@ -7,8 +21,8 @@ android {
         applicationId "com.lastpuff.mobile"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode buildVersionCode.toInteger()
+        versionName buildVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

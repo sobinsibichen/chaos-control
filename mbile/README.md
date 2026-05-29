@@ -39,4 +39,9 @@ npm run build:apk
 
 Expected APK path after success:
 
-`android\app\build\outputs\apk\debug\app-debug.apk`
+`%LOCALAPPDATA%\LastPuff\android-build\app\outputs\apk\debug\app-debug.apk`
+
+Note:
+
+- The Gradle build directory is redirected out of the repo, so `android\app\build` can look stale
+- If you want the exact copied APK path after a build, use the path above
