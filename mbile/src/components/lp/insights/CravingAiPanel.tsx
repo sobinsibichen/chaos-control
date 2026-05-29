@@ -1,4 +1,5 @@
-import { Radar as RadarIcon } from "lucide-react";
+import { Radar as RadarIcon, RefreshCw } from "lucide-react";
+import { motion } from "framer-motion";
 import {
   CartesianGrid,
   Line,
@@ -15,9 +16,13 @@ import type { InsightsSharedData } from "./InsightsState";
 export function CravingAiPanel({
   data,
   dangerousWindow,
+  onGeneratePrediction,
+  generatingPrediction,
 }: {
   data: InsightsSharedData;
   dangerousWindow: { label: string; intensity: number };
+  onGeneratePrediction?: () => void;
+  generatingPrediction?: boolean;
 }) {
   const hourlyCraving = data.hourlyCraving.length
     ? data.hourlyCraving
@@ -50,6 +55,17 @@ export function CravingAiPanel({
             <RadarIcon className="h-5 w-5 animate-danger-pulse text-red-500" />
           </div>
         </div>
+        {onGeneratePrediction ? (
+          <motion.button
+            whileTap={{ scale: 0.98 }}
+            onClick={onGeneratePrediction}
+            disabled={Boolean(generatingPrediction)}
+            className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl border border-foreground/10 bg-white px-4 py-3 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            <RefreshCw className={`h-4 w-4 ${generatingPrediction ? "animate-spin" : ""}`} />
+            {generatingPrediction ? "Generating prediction..." : "Refresh prediction"}
+          </motion.button>
+        ) : null}
       </GlassCard>
 
       <div className="grid grid-cols-2 gap-3">

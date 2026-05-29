@@ -169,6 +169,10 @@ export function useIntelligenceData() {
     },
   });
 
+  const requestCravingPrediction = () => {
+    createCravingMutation.mutate();
+  };
+
   useEffect(() => {
     if (!queriesEnabled || !dashboardQuery.data || !analyticsQuery.data?.analytics) {
       return;
@@ -239,6 +243,8 @@ export function useIntelligenceData() {
     hourlyCraving,
     weeklyReplay,
     replayHeatmap,
+    requestCravingPrediction,
+    isRequestingCravingPrediction: createCravingMutation.isPending,
     isReady: queriesEnabled,
     isLoading:
       dashboardQuery.isLoading ||

@@ -496,8 +496,8 @@ function Profile() {
       <div className="mb-2">
         <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Your Level Roadmap</div>
       </div>
-      <GlassCard className="mb-6 overflow-hidden border border-black/10 px-4 py-4">
-        <div className="rounded-[1.65rem] border border-black/10 bg-[radial-gradient(circle_at_top,_rgba(250,204,21,0.24),_transparent_45%),radial-gradient(circle_at_bottom_left,_rgba(34,197,94,0.14),_transparent_40%),linear-gradient(180deg,#fffdf7_0%,#f3ead8_100%)] p-4 shadow-[0_24px_48px_rgba(15,23,42,0.08)]">
+      <GlassCard className="mb-6 overflow-hidden border border-black/10 bg-white px-4 py-4">
+        <div className="rounded-[1.65rem] border border-black/10 bg-white p-4 shadow-[0_24px_48px_rgba(15,23,42,0.08)]">
           <div className="flex items-start justify-between gap-3">
             <div>
               <div className="text-lg font-semibold text-foreground">15-Level Recovery Road</div>
@@ -505,18 +505,6 @@ function Profile() {
             </div>
             <div className="rounded-full border border-black/10 bg-white/85 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-foreground shadow-sm">
               L{currentLevel}
-            </div>
-          </div>
-
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <div className="rounded-full border border-foreground/10 bg-white px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-foreground">
-              Completed
-            </div>
-            <div className="rounded-full border border-foreground/10 bg-white px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-foreground">
-              Upcoming
-            </div>
-            <div className="rounded-full bg-black px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-white">
-              Level 15 = Certificate
             </div>
           </div>
 
@@ -562,28 +550,42 @@ function Profile() {
 
               {roadmapProgress.map((point, index) => (
                 <g key={point.level}>
-                  {point.current ? (
-                    <motion.circle
-                      cx={point.x}
-                      cy={point.y}
-                      r="28"
-                      fill="#000000"
-                      opacity="0.12"
-                      animate={{ scale: [1, 1.12, 1], opacity: [0.12, 0.22, 0.12] }}
-                      transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
-                    />
-                  ) : null}
-                  <motion.circle
-                    cx={point.x}
-                    cy={point.y}
-                    r="20"
-                    fill={point.unlocked ? "#111111" : "#ffffff"}
-                    stroke="#111111"
-                    strokeWidth="3.5"
-                    filter="url(#circleGlow)"
-                    animate={point.current ? { scale: [1, 1.08, 1] } : { y: [0, index % 2 === 0 ? -1.5 : 1.5, 0] }}
-                    transition={point.current ? { duration: 2, repeat: Infinity, ease: "easeInOut" } : { duration: 3 + (index % 3) * 0.35, repeat: Infinity, ease: "easeInOut" }}
-                  />
+                  {(() => {
+                    const threshold = levelGuide.find((level) => level.level === point.level)?.requiredPoints ?? 0;
+                    const reachedByPoints = currentPoints >= threshold;
+                    const glow = point.current ? "rgba(250,204,21,0.18)" : reachedByPoints ? "rgba(34,197,94,0.18)" : "rgba(17,17,17,0.08)";
+
+                    return point.current ? (
+                      <motion.circle
+                        cx={point.x}
+                        cy={point.y}
+                        r="28"
+                        fill={glow}
+                        animate={{ scale: [1, 1.12, 1], opacity: [0.14, 0.24, 0.14] }}
+                        transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
+                      />
+                    ) : null;
+                  })()}
+                  {(() => {
+                    const threshold = levelGuide.find((level) => level.level === point.level)?.requiredPoints ?? 0;
+                    const reachedByPoints = currentPoints >= threshold;
+                    const fill = point.current ? "#facc15" : reachedByPoints ? "#22c55e" : "#ffffff";
+                    const stroke = point.current ? "#ca8a04" : reachedByPoints ? "#15803d" : "#111111";
+
+                    return (
+                      <motion.circle
+                        cx={point.x}
+                        cy={point.y}
+                        r="20"
+                        fill={fill}
+                        stroke={stroke}
+                        strokeWidth="3.5"
+                        filter="url(#circleGlow)"
+                        animate={point.current ? { scale: [1, 1.08, 1] } : { y: [0, index % 2 === 0 ? -1.5 : 1.5, 0] }}
+                        transition={point.current ? { duration: 2, repeat: Infinity, ease: "easeInOut" } : { duration: 3 + (index % 3) * 0.35, repeat: Infinity, ease: "easeInOut" }}
+                      />
+                    );
+                  })()}
                   <text
                     x={point.x}
                     y={point.y + 4}

@@ -221,7 +221,12 @@ export function InsightsHub({ initialTab = "Roast" }: { initialTab?: InsightsTab
           <div className={activeTab === "Craving AI" ? "block" : "hidden"}>
             <InsightsTabErrorBoundary tabName="Craving AI">
               <Suspense fallback={<TabSkeleton />}>
-                <CravingAiTab data={data} dangerousWindow={dangerousWindow} />
+                <CravingAiTab
+                  data={data}
+                  dangerousWindow={dangerousWindow}
+                  onGeneratePrediction={() => void data.requestCravingPrediction()}
+                  generatingPrediction={data.isRequestingCravingPrediction}
+                />
               </Suspense>
             </InsightsTabErrorBoundary>
           </div>

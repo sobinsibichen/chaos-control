@@ -184,6 +184,7 @@ public final class BlockOverlayManager {
     }
 
     private void launchLastPuff() {
+        hideOverlay();
         Intent intent = context.getPackageManager().getLaunchIntentForPackage(context.getPackageName());
         if (intent == null) {
             return;
@@ -194,6 +195,7 @@ public final class BlockOverlayManager {
     }
 
     private void launchHome() {
+        hideOverlay();
         Intent intent = new Intent(Intent.ACTION_MAIN);
         intent.addCategory(Intent.CATEGORY_HOME);
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
