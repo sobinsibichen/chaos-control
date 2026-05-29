@@ -67,13 +67,11 @@ function Profile() {
   const profileQuery = useQuery({
     queryKey: queryKeys.profile,
     queryFn: () => apiRequest<{ success: boolean; profile: ProfilePayload }>("/api/profile"),
-    refetchInterval: 60000,
   });
 
   const achievementsQuery = useQuery({
     queryKey: queryKeys.achievements,
     queryFn: () => apiRequest<{ success: boolean; achievements: Achievement[] }>("/api/profile/achievements"),
-    refetchInterval: 60000,
   });
 
   const profile = profileQuery.data?.profile;
@@ -154,36 +152,36 @@ function Profile() {
           <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Account</div>
           <h1 className="mt-2 text-2xl font-semibold text-foreground">Your Profile</h1>
         </div>
-        <button className="flex h-10 w-10 items-center justify-center rounded-lg border border-foreground/10 bg-card transition-colors hover:border-foreground/20">
-          <Settings className="h-4 w-4 text-muted-foreground" />
+        <button className="flex h-10 w-10 items-center justify-center rounded-lg border border-foreground/10 bg-white transition-colors hover:border-foreground/20">
+          <Settings className="h-4 w-4 text-foreground" />
         </button>
       </div>
 
-      <GlassCard glow="orange" className="relative mb-6">
+      <GlassCard className="relative mb-6">
         <div className="flex items-center gap-4">
           <motion.div
             animate={{ rotate: [0, 2, -2, 0] }}
             transition={{ duration: 8, repeat: Infinity }}
             className="relative h-16 w-16"
           >
-            <div className="flex h-full w-full items-center justify-center rounded-lg border border-foreground/10 bg-card text-2xl shadow-sm">
+            <div className="flex h-full w-full items-center justify-center rounded-lg border border-foreground/10 bg-white text-2xl shadow-sm">
               {profile?.user.avatar ?? authUser?.avatar ?? "V"}
             </div>
           </motion.div>
           <div className="min-w-0 flex-1">
             <div className="text-lg font-semibold text-foreground">{profile?.user.name ?? authUser?.username ?? "User"}</div>
             <div className="text-xs text-muted-foreground">{profile?.rewardTitle ?? "Tracking your recovery"}</div>
-            <div className="mt-1 text-[10px] font-medium uppercase tracking-[0.15em] text-primary">Streak: {profile?.streak.current ?? 0}</div>
+            <div className="mt-1 text-[10px] font-medium uppercase tracking-[0.15em] text-foreground">Streak: {profile?.streak.current ?? 0}</div>
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              <div className="inline-flex items-center gap-1 rounded-full border border-amber-400/20 bg-amber-400/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-amber-600">
+              <div className="inline-flex items-center gap-1 rounded-full border border-foreground/10 bg-white px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-foreground">
                 <Sparkles className="h-3 w-3" />
                 {profile?.currentLevelXp ?? 0} Points
               </div>
               <button
                 onClick={() => setPointsGuideOpen(true)}
-                className="rounded-full border border-foreground/10 bg-card px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground transition-colors hover:border-foreground/20 hover:text-foreground"
+                className="rounded-full border border-foreground/10 bg-white px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-foreground transition-colors hover:border-foreground/20"
               >
-                View Points
+                View Levels
               </button>
             </div>
           </div>
@@ -194,36 +192,36 @@ function Profile() {
             <span className="text-muted-foreground">
               Level {profile?.level ?? 1} · {profile?.levelName ?? "Starter"}
             </span>
-            <span className="text-primary">{profile?.levelProgressPercent ?? 0}%</span>
+            <span className="text-foreground">{profile?.levelProgressPercent ?? 0}%</span>
           </div>
-          <div className="h-1.5 overflow-hidden rounded-full bg-white/8">
+          <div className="h-1.5 overflow-hidden rounded-full bg-black/10">
             <motion.div
               initial={{ width: 0 }}
               animate={{ width: `${profile?.levelProgressPercent ?? 0}%` }}
               transition={{ duration: 1.2 }}
-              className="h-full bg-gradient-to-r from-primary via-stone-400 to-stone-700"
+              className="h-full bg-black"
             />
           </div>
         </div>
       </GlassCard>
 
       <Dialog open={pointsGuideOpen} onOpenChange={setPointsGuideOpen}>
-        <DialogContent className="max-w-xl rounded-[1.75rem] border border-foreground/10 bg-[#fcfaf6] p-0 shadow-[0_24px_64px_rgba(15,23,42,0.18)]">
-          <div className="rounded-[1.75rem] bg-[radial-gradient(circle_at_top,_rgba(245,158,11,0.14),_transparent_55%),linear-gradient(180deg,#fffdf8_0%,#f7f1e7_100%)] p-6">
+        <DialogContent className="max-w-xl rounded-[1.75rem] border border-foreground/10 bg-white p-0 shadow-[0_24px_64px_rgba(15,23,42,0.18)]">
+          <div className="rounded-[1.75rem] bg-white p-6">
             <DialogHeader className="pr-10 text-left">
-              <DialogTitle className="text-xl text-foreground">Points Structure</DialogTitle>
+              <DialogTitle className="text-xl text-foreground">Level Roadmap</DialogTitle>
               <DialogDescription className="text-sm text-muted-foreground">
                 Smoke less than your daily baseline to gain points. Smoke above it and points are removed. Reach the final level to unlock the certificate.
               </DialogDescription>
             </DialogHeader>
 
-            <div className="mt-5 grid gap-3 rounded-[1.5rem] border border-foreground/10 bg-white/80 p-4 shadow-sm">
+            <div className="mt-5 grid gap-3 rounded-[1.5rem] border border-foreground/10 bg-white p-4 shadow-sm">
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <div className="text-sm font-semibold text-foreground">How points move</div>
                   <div className="mt-1 text-xs text-muted-foreground">Each cigarette avoided below your baseline helps. Smoke-free hours add bonus momentum. Smoking above your baseline removes from your total score and can drop your level.</div>
                 </div>
-                <div className="rounded-2xl bg-amber-400/10 px-3 py-2 text-right text-[11px] font-semibold text-amber-700">
+                <div className="rounded-2xl border border-foreground/10 bg-white px-3 py-2 text-right text-[11px] font-semibold text-foreground">
                   + below baseline
                   <br />
                   + smoke-free time
@@ -242,7 +240,7 @@ function Profile() {
                   return (
                     <div
                       key={level.level}
-                      className={`rounded-[1.4rem] border p-4 shadow-sm transition-colors ${isCurrent ? "border-amber-400/30 bg-amber-400/10" : "border-foreground/10 bg-white/85"}`}
+                      className={`rounded-[1.4rem] border p-4 shadow-sm transition-colors ${isCurrent ? "border-foreground bg-black/5" : "border-foreground/10 bg-white"}`}
                     >
                       <div className="flex items-center justify-between gap-4">
                         <div>
@@ -269,10 +267,10 @@ function Profile() {
 
       <div className="mb-6 grid grid-cols-2 gap-3">
         {[
-          { l: "Commitment", v: profile?.commitment ?? "Loading", c: "text-primary" },
-          { l: "Highest Streak", v: `${profile?.streak.highest ?? 0}`, c: "text-emerald-500" },
-          { l: "Total Savings", v: formatMoney(profile?.savings.total ?? 0), c: "text-sky-600" },
-          { l: "Cigs Avoided", v: `${profile?.stats.totalCigarettesAvoided ?? 0}`, c: "text-rose-500" },
+          { l: "Commitment", v: profile?.commitment ?? "Loading", c: "text-foreground" },
+          { l: "Highest Streak", v: `${profile?.streak.highest ?? 0}`, c: "text-foreground" },
+          { l: "Total Savings", v: formatMoney(profile?.savings.total ?? 0), c: "text-foreground" },
+          { l: "Cigs Avoided", v: `${profile?.stats.totalCigarettesAvoided ?? 0}`, c: "text-foreground" },
         ].map((item, index) => (
           <motion.div
             key={item.l}
@@ -290,7 +288,7 @@ function Profile() {
       <GlassCard className="mb-6">
         <div className="mb-4 flex items-center gap-3">
           <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-foreground/5">
-            <TimerReset className="h-5 w-5 text-primary" />
+            <TimerReset className="h-5 w-5 text-foreground" />
           </div>
           <div>
             <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Live Recovery</div>
@@ -319,7 +317,7 @@ function Profile() {
               <div className="text-[10px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Recovery Stage</div>
               <div className="mt-1 text-sm font-semibold text-foreground">{profile?.lungs.stage ?? "Oxygen improving"}</div>
             </div>
-            <Wind className="h-5 w-5 text-sky-600" />
+            <Wind className="h-5 w-5 text-foreground" />
           </div>
         </div>
       </GlassCard>
@@ -327,10 +325,10 @@ function Profile() {
       <div className="mb-4">
         <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Smoking Preferences</div>
       </div>
-      <GlassCard glow="orange" className="mb-6">
+      <GlassCard className="mb-6">
         <div className="flex items-start gap-3">
           <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-foreground/5">
-            <IndianRupee className="h-5 w-5 text-primary" />
+            <IndianRupee className="h-5 w-5 text-foreground" />
           </div>
           <div className="flex-1">
             <div className="text-lg font-semibold text-foreground">Live Savings Inputs</div>
@@ -342,7 +340,7 @@ function Profile() {
 
         <div className="mt-4 grid gap-3">
           <div className="flex items-center rounded-2xl border border-foreground/10 bg-card px-4 shadow-sm">
-            <span className="text-lg font-semibold text-primary">Rs</span>
+            <span className="text-lg font-semibold text-foreground">Rs</span>
             <input
               inputMode="numeric"
               value={draftPrice}
@@ -374,21 +372,21 @@ function Profile() {
           <button
             onClick={() => savePreferences.mutate()}
             disabled={savePreferences.isPending}
-            className="rounded-lg bg-primary px-4 py-3 text-xs font-semibold text-primary-foreground transition-all hover:bg-primary/90"
+            className="rounded-lg bg-black px-4 py-3 text-xs font-semibold text-white transition-all hover:bg-black/90"
           >
             {savePreferences.isPending ? "Saving..." : "Update"}
           </button>
         </div>
-        {successMessage ? <div className="mt-3 text-sm text-emerald-600">{successMessage}</div> : null}
-        {errorMessage ? <div className="mt-3 text-sm text-red-500">{errorMessage}</div> : null}
+        {successMessage ? <div className="mt-3 text-sm text-foreground">{successMessage}</div> : null}
+        {errorMessage ? <div className="mt-3 text-sm text-foreground">{errorMessage}</div> : null}
       </GlassCard>
 
       <div className="mb-6 grid grid-cols-2 gap-3">
         {[
-          { l: "Today Saved", v: formatMoney(profile?.savings.today ?? 0), c: "text-amber-600" },
-          { l: "Weekly Saved", v: formatMoney(profile?.savings.weekly ?? 0), c: "text-fuchsia-600" },
-          { l: "Focus", v: profile?.stats.focusLevel ?? "HIGH", c: "text-sky-600" },
-          { l: "Quit Attempts", v: `${profile?.stats.quitCount ?? 0}`, c: "text-emerald-600" },
+          { l: "Today Saved", v: formatMoney(profile?.savings.today ?? 0), c: "text-foreground" },
+          { l: "Weekly Saved", v: formatMoney(profile?.savings.weekly ?? 0), c: "text-foreground" },
+          { l: "Focus", v: profile?.stats.focusLevel ?? "HIGH", c: "text-foreground" },
+          { l: "Quit Attempts", v: `${profile?.stats.quitCount ?? 0}`, c: "text-foreground" },
         ].map((item, index) => (
           <motion.div
             key={item.l}
@@ -420,7 +418,7 @@ function Profile() {
                 whileTap={{ scale: 0.96 }}
                 className="glass relative overflow-hidden rounded-2xl border border-foreground/10 p-3"
               >
-                <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-lg bg-foreground/5 text-amber-400">
+                <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-lg bg-foreground/5 text-foreground">
                   <Icon className="h-4 w-4" />
                 </div>
                 <div className="text-sm font-semibold leading-tight text-foreground">{badge.title}</div>
@@ -438,12 +436,12 @@ function Profile() {
         </GlassCard>
       )}
 
-      <GlassCard className="border border-red-400/20 text-center">
+      <GlassCard className="border border-foreground/10 text-center">
         <div className="mb-2 text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Account</div>
         <div className="text-sm text-foreground">Everything here updates live from your recovery data.</div>
         <button
           onClick={handleLogout}
-          className="mt-3 w-full rounded-2xl border border-red-400/30 bg-red-400/10 py-2.5 text-xs font-semibold text-red-400 transition-all hover:bg-red-400/20"
+          className="mt-3 w-full rounded-2xl border border-foreground/10 bg-white py-2.5 text-xs font-semibold text-foreground transition-all hover:bg-black/5"
         >
           Logout
         </button>

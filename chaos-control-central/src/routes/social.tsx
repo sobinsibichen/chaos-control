@@ -2,16 +2,16 @@ import { createFileRoute } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "framer-motion";
 import { Eye, EyeOff, Radar, ScanSearch, Zap } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { io, type Socket } from "socket.io-client";
 import { AppShell } from "@/components/lp/AppShell";
 import { GlassCard } from "@/components/lp/GlassCard";
 import { ChatModal } from "@/components/lp/social/ChatModal";
 import { NearbyUserCard } from "@/components/lp/social/NearbyUserCard";
 import { RadarScannerModal } from "@/components/lp/social/RadarScannerModal";
 import { fakeReplies } from "@/components/lp/social-data";
-import { API_URL, apiRequest } from "@/lib/api";
+import { apiRequest } from "@/lib/api";
 import { appStore, type NearbySmoker, useAppStore } from "@/lib/app-store";
 import { ensureNativeLocationPermission, isNativeAndroid } from "@/lib/native/mobile";
+import { connectRealtime } from "@/lib/realtime";
 import { requireAuth } from "@/lib/route-guards";
 
 export const Route = createFileRoute("/social")({
@@ -33,7 +33,7 @@ function Social() {
   const watchIdRef = useRef<number | null>(null);
   const locationIntervalRef = useRef<number | null>(null);
   const lastSentLocationRef = useRef<{ latitude: number; longitude: number; at: number } | null>(null);
-  const socketRef = useRef<Socket | null>(null);
+  const realtimeRef = useRef<{ disconnect: () => void } | null>(null);
   const loadingNearbyRef = useRef(false);
 
   useEffect(() => {
@@ -189,42 +189,38 @@ function Social() {
       return undefined;
     }
 
-    const socket = io(API_URL, {
-      auth: { token },
-      transports: ["websocket"],
-    });
-    socketRef.current = socket;
-
-    socket.on("connect", () => {
-      socket.emit("social:subscribe");
-    });
-
     const refreshNearby = () => {
       void loadNearbyUsers();
     };
 
-    socket.on("user-online", refreshNearby);
-    socket.on("user-offline", refreshNearby);
-    socket.on("user-location-update", refreshNearby);
-    socket.on("streak-updated", refreshNearby);
-    socket.on("level-updated", refreshNearby);
+    realtimeRef.current = connectRealtime(token, {
+      onMessage: (message) => {
+        if (message.type !== "social:event") {
+          return;
+        }
+
+        if (
+          message.event === "user-online" ||
+          message.event === "user-offline" ||
+          message.event === "user-location-update" ||
+          message.event === "streak-updated" ||
+          message.event === "level-updated"
+        ) {
+          refreshNearby();
+        }
+      },
+    });
 
     return () => {
-      socket.emit("social:unsubscribe");
-      socket.off("user-online", refreshNearby);
-      socket.off("user-offline", refreshNearby);
-      socket.off("user-location-update", refreshNearby);
-      socket.off("streak-updated", refreshNearby);
-      socket.off("level-updated", refreshNearby);
-      socket.disconnect();
-      socketRef.current = null;
+      realtimeRef.current?.disconnect();
+      realtimeRef.current = null;
     };
   }, [token]);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
       void loadNearbyUsers();
-    }, 15000);
+    }, 60000);
 
     return () => window.clearInterval(interval);
   }, []);

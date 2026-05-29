@@ -28,12 +28,14 @@ export function MentalStabilityChallenge({ open, onClose, onResult }: MentalStab
   const [typed, setTyped] = useState("");
   const [failed, setFailed] = useState(false);
   const [completed, setCompleted] = useState(false);
+  const [composerFocused, setComposerFocused] = useState(false);
 
   const paragraph = useMemo(() => paragraphs[seed]!, [seed]);
   const progress = Math.min(100, (typed.length / paragraph.length) * 100);
 
   useEffect(() => {
     if (!open) {
+      setComposerFocused(false);
       return;
     }
 
@@ -83,14 +85,18 @@ export function MentalStabilityChallenge({ open, onClose, onResult }: MentalStab
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[75] flex items-end justify-center bg-background/85 px-4 pb-4 pt-10 backdrop-blur-md"
+          className="fixed inset-0 z-[75] flex items-center justify-center bg-background/85 px-4 py-4 backdrop-blur-md"
         >
           <motion.div
             initial={{ opacity: 0, y: 24, scale: 0.98 }}
-            animate={failed ? { opacity: 1, y: [0, -6, 6, -4, 0], scale: [1, 0.995, 1] } : { opacity: 1, y: 0, scale: 1 }}
+            animate={
+              failed
+                ? { opacity: 1, y: [0, -6, 6, -4, 0], scale: [1, 0.995, 1] }
+                : { opacity: 1, y: composerFocused ? -64 : 0, scale: 1 }
+            }
             exit={{ opacity: 0, y: 20 }}
             transition={{ duration: 0.35 }}
-            className={`glass-strong max-h-full w-full max-w-md overflow-y-auto rounded-[2rem] border p-5 ${
+            className={`glass-strong max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-[2rem] border p-5 ${
               failed ? "border-red-400/40 shadow-[0_0_40px_-10px_rgba(248,113,113,0.35)]" : "border-foreground/10"
             }`}
           >
@@ -136,6 +142,8 @@ export function MentalStabilityChallenge({ open, onClose, onResult }: MentalStab
               onChange={(event) => handleChange(event.target.value)}
               disabled={failed || completed}
               placeholder="Prove your alleged discipline..."
+              onFocus={() => setComposerFocused(true)}
+              onBlur={() => setComposerFocused(false)}
               className={`mt-4 min-h-40 w-full rounded-[1.75rem] border bg-card px-4 py-4 text-sm outline-none placeholder:text-muted-foreground ${
                 failed
                   ? "border-red-400/45 shadow-[0_0_30px_-12px_rgba(248,113,113,0.35)]"

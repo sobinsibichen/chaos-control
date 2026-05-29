@@ -451,6 +451,7 @@ function ControlPage() {
   const [savingSchedule, setSavingSchedule] = useState(false);
   const [savingSelection, setSavingSelection] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [savedNotifications, setSavedNotifications] = useState<string[]>([]);
   const [installedApps, setInstalledApps] = useState<CatalogApp[]>([]);
   const [nativeProtectionStatus, setNativeProtectionStatus] = useState<NativeProtectionStatus | null>(null);
   const [permissionWizardComplete, setPermissionWizardComplete] = useState(false);
@@ -754,11 +755,6 @@ function ControlPage() {
 
     if (isProtectionReady(nativeProtectionStatus)) {
       completePermissionWizard();
-      return;
-    }
-
-    if (!permissionWizardComplete) {
-      setPermissionWizardOpen(true);
     }
   }, [nativeProtectionStatus, permissionWizardComplete]);
 
@@ -914,6 +910,10 @@ function ControlPage() {
         }),
       });
       setApps(response.apps);
+      setSavedNotifications((current) => [
+        `Saved ${selectedApps.length} app${selectedApps.length === 1 ? "" : "s"} to protection.`,
+        ...current,
+      ].slice(0, 3));
       setPickerOpen(false);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Unable to save selected apps.");
@@ -1071,10 +1071,23 @@ function ControlPage() {
                 : "On web preview this falls back to the demo app catalog."}
             </div>
 
-            <div className="mt-4 text-xs text-muted-foreground">
-              {selectedAppsCount
-                ? `${selectedAppsCount} apps selected. Saved silently and shown only in Blocked Applications.`
-                : "Select apps to protect from the picker above. They are saved silently and shown only in Blocked Applications."}
+            <div className="mt-4 rounded-2xl border border-foreground/10 bg-background px-4 py-3 shadow-sm">
+              <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Saved Notifications</div>
+              <div className="mt-2 space-y-1">
+                {savedNotifications.length ? (
+                  savedNotifications.map((notice, index) => (
+                    <div key={`${notice}-${index}`} className="text-sm font-medium text-foreground">
+                      {notice}
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-xs text-muted-foreground">
+                    {selectedAppsCount
+                      ? `${selectedAppsCount} apps selected. Save once to pin a notification here.`
+                      : "Select apps to protect from the picker above. Saved updates will appear here."}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>

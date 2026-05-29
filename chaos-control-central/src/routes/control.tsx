@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useLocation } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   BrainCircuit,
@@ -135,6 +135,7 @@ function ViewportPortal({ children }: { children: React.ReactNode }) {
 }
 
 function ControlPage() {
+  const location = useLocation();
   const unlockedApps = useAppStore((state) => state.damage.unlockedApps);
   const unlockFailures = useAppStore((state) => state.damage.unlockFailures);
   const [challengeOpen, setChallengeOpen] = useState(false);
@@ -149,10 +150,17 @@ function ControlPage() {
   const [savingSchedule, setSavingSchedule] = useState(false);
   const [savingSelection, setSavingSelection] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [saveNotices, setSaveNotices] = useState<string[]>([]);
   const [installedApps, setInstalledApps] = useState<CatalogApp[]>([]);
   const [nativeProtectionStatus, setNativeProtectionStatus] = useState<NativeProtectionStatus | null>(null);
   const hasLoadedRef = useRef(false);
   const installedAppsLoadedRef = useRef(false);
+
+  useEffect(() => {
+    setChallengeOpen(false);
+    setPickerOpen(false);
+    setSearchValue("");
+  }, [location.pathname]);
 
   useEffect(() => {
     const loadApps = async () => {
@@ -295,6 +303,7 @@ function ControlPage() {
     };
 
     setPickerLoading(true);
+    setSearchValue("");
     setDraftSelectedPackages(
       apps
         .filter((app) => app.is_active)
@@ -347,6 +356,13 @@ function ControlPage() {
         }),
       });
       setApps(response.apps);
+      setSaveNotices((current) => [
+        `Saved ${selectedApps.length} app${selectedApps.length === 1 ? "" : "s"}: ${selectedApps
+          .slice(0, 3)
+          .map((item) => item.appName)
+          .join(", ")}${selectedApps.length > 3 ? "..." : ""}.`,
+        ...current,
+      ].slice(0, 3));
       setPickerOpen(false);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Unable to save selected apps.");
@@ -521,6 +537,19 @@ function ControlPage() {
                 </div>
               )}
             </div>
+
+            {saveNotices.length ? (
+              <div className="mt-4 rounded-2xl border border-foreground/10 bg-background px-4 py-3 shadow-sm">
+                <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Saved Notifications</div>
+                <div className="mt-2 space-y-1">
+                  {saveNotices.map((notice, index) => (
+                    <div key={`${notice}-${index}`} className="text-sm font-medium text-foreground">
+                      {notice}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </div>
 
           <div className="flex items-center justify-between rounded-2xl border border-foreground/10 bg-background px-4 py-3 shadow-sm">
@@ -761,6 +790,19 @@ function ControlPage() {
                       {savingSelection ? "Saving..." : "Save Selected Apps"}
                     </button>
                   </div>
+
+                  {saveNotices.length ? (
+                    <div className="mt-3 rounded-2xl border border-foreground/10 bg-background px-4 py-3 shadow-sm">
+                      <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Saved Notifications</div>
+                      <div className="mt-2 space-y-1">
+                        {saveNotices.map((notice, index) => (
+                          <div key={`${notice}-${index}`} className="text-sm font-medium text-foreground">
+                            {notice}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               </motion.div>
             </motion.div>

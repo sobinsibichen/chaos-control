@@ -1,11 +1,10 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
-import { io, type Socket } from "socket.io-client";
 import { useAppStore } from "@/lib/app-store";
-import { API_URL } from "@/lib/api";
 import { queryKeys } from "@/lib/query-keys";
+import { connectRealtime } from "@/lib/realtime";
 
-let socket: Socket | null = null;
+let realtimeConnection: { disconnect: () => void } | null = null;
 
 export function LiveSync() {
   const queryClient = useQueryClient();
@@ -14,15 +13,10 @@ export function LiveSync() {
 
   useEffect(() => {
     if (!isAuthenticated || !token) {
-      socket?.disconnect();
-      socket = null;
+      realtimeConnection?.disconnect();
+      realtimeConnection = null;
       return undefined;
     }
-
-    socket = io(API_URL, {
-      auth: { token },
-      transports: ["websocket"],
-    });
 
     const invalidateAll = () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.dashboard });
@@ -35,12 +29,17 @@ export function LiveSync() {
       void queryClient.invalidateQueries({ queryKey: queryKeys.nearby });
     };
 
-    socket.on("user:refresh", invalidateAll);
+    realtimeConnection = connectRealtime(token, {
+      onMessage: (message) => {
+        if (message.type === "user:refresh") {
+          invalidateAll();
+        }
+      },
+    });
 
     return () => {
-      socket?.off("user:refresh", invalidateAll);
-      socket?.disconnect();
-      socket = null;
+      realtimeConnection?.disconnect();
+      realtimeConnection = null;
     };
   }, [isAuthenticated, queryClient, token]);
 

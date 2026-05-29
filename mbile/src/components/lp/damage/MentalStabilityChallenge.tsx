@@ -30,6 +30,7 @@ export function MentalStabilityChallenge({ open, onClose, onResult }: MentalStab
   const [failed, setFailed] = useState(false);
   const [completed, setCompleted] = useState(false);
   const [attempts, setAttempts] = useState(0);
+  const [composerFocused, setComposerFocused] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const paragraph = useMemo(() => paragraphs[seed]!, [seed]);
@@ -40,6 +41,7 @@ export function MentalStabilityChallenge({ open, onClose, onResult }: MentalStab
 
   useEffect(() => {
     if (!open) {
+      setComposerFocused(false);
       return;
     }
 
@@ -116,14 +118,18 @@ export function MentalStabilityChallenge({ open, onClose, onResult }: MentalStab
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[75] flex items-end justify-center bg-background/85 px-4 pb-4 pt-10 backdrop-blur-md"
+          className="fixed inset-0 z-[75] flex items-center justify-center bg-background/85 px-4 py-4 backdrop-blur-md"
         >
           <motion.div
             initial={{ opacity: 0, y: 24, scale: 0.98 }}
-            animate={failed ? { opacity: 1, y: [0, -6, 6, -4, 0], scale: [1, 0.995, 1] } : { opacity: 1, y: 0, scale: 1 }}
+            animate={
+              failed
+                ? { opacity: 1, y: [0, -6, 6, -4, 0], scale: [1, 0.995, 1] }
+                : { opacity: 1, y: composerFocused ? -56 : 0, scale: 1 }
+            }
             exit={{ opacity: 0, y: 20 }}
             transition={{ duration: 0.35 }}
-            className={`glass-strong flex max-h-full w-full max-w-md flex-col overflow-hidden rounded-[2rem] border p-5 ${
+            className={`glass-strong flex max-h-[calc(100dvh-2rem)] w-full max-w-md flex-col overflow-hidden rounded-[2rem] border p-5 ${
               failed ? "border-red-400/40 shadow-[0_0_40px_-10px_rgba(248,113,113,0.35)]" : "border-foreground/10"
             }`}
           >
@@ -184,6 +190,8 @@ export function MentalStabilityChallenge({ open, onClose, onResult }: MentalStab
                 inputMode="text"
                 value={typed}
                 onChange={handleChange}
+                onFocus={() => setComposerFocused(true)}
+                onBlur={() => setComposerFocused(false)}
                 className="absolute inset-0 h-full w-full resize-none bg-transparent p-0 text-transparent caret-transparent outline-none"
                 aria-label="Type challenge text"
               />
