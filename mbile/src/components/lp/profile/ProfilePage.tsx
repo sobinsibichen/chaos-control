@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+ï»¿import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { Award, Cigarette, IndianRupee, Settings, Sparkles, TimerReset, Wind } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -7,6 +7,7 @@ import { GlassCard } from "@/components/lp/GlassCard";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { apiClient, apiRequest } from "@/lib/api";
 import { appStore, useAppStore } from "@/lib/app-store";
+import { queryCacheTimes } from "@/lib/query-cache";
 import { queryKeys } from "@/lib/query-keys";
 import { formatLongDuration, formatSmokeFree, useSmokeFreeTicker } from "@/lib/time";
 
@@ -262,7 +263,7 @@ export default function ProfilePage() {
         <div className="mt-4">
           <div className="mb-2 flex justify-between text-[10px] font-medium">
             <span className="text-muted-foreground">
-              Level {profile?.level ?? 1} · {profile?.levelName ?? "Starter"}
+              Level {profile?.level ?? 1} Â· {profile?.levelName ?? "Starter"}
             </span>
             <span className="text-foreground">{Math.round(levelProgressPercent)}%</span>
           </div>
@@ -331,7 +332,7 @@ export default function ProfilePage() {
                       <div className="flex items-start justify-between gap-4">
                         <div className="min-w-0">
                           <div className="text-sm font-semibold text-foreground">
-                            Level {level.level} · {level.name}
+                            Level {level.level} Â· {level.name}
                           </div>
                           <div className="mt-1 text-xs text-muted-foreground">{level.rewardTitle}</div>
                         </div>

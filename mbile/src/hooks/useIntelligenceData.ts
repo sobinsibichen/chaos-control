@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/api";
 import { useAppStore } from "@/lib/app-store";
 import { createCravingPrediction, createFallbackCravingPrediction, fetchLiveCravingPrediction, listCravingPredictions, type CravingPredictionRecord } from "@/lib/cravingApi";
@@ -33,6 +33,14 @@ function buildPredictionSeries(prediction: CravingPredictionRecord | undefined) 
 }
 
 const INSIGHTS_CACHE_MAX_AGE_MS = 30 * 60 * 1000;
+const insightsQueryOptions = {
+  staleTime: 60_000,
+  gcTime: 600_000,
+  placeholderData: keepPreviousData,
+  refetchOnWindowFocus: false,
+  refetchOnReconnect: false,
+  refetchOnMount: false,
+} as const;
 const insightsCacheKeys = {
   dashboard: "last-puff-insights-dashboard-cache",
   analytics: "last-puff-insights-analytics-cache",
@@ -92,17 +100,50 @@ export function useIntelligenceData() {
     [],
   );
 
+  useEffect(() => {
+    console.info("[insights-cache] Insights page mounted; route unmounts on navigation away.", {
+      queriesEnabled,
+      cached: {
+        dashboard: Boolean(cachedDashboard?.data),
+        analytics: Boolean(cachedAnalytics?.data),
+        activity: Boolean(cachedActivity?.data),
+        smokeDna: Boolean(cachedSmokeDna?.data),
+        replayHistory: Boolean(cachedReplayHistory?.data),
+        monthlyReplay: Boolean(cachedMonthlyReplay?.data),
+        yearlyReplay: Boolean(cachedYearlyReplay?.data),
+        cravingHistory: Boolean(cachedCravingHistory?.data),
+        liveCraving: Boolean(cachedLiveCraving?.data),
+      },
+    });
+
+    return () => {
+      console.info("[insights-cache] Insights page unmounted on route change.");
+    };
+  }, [
+    cachedActivity?.data,
+    cachedAnalytics?.data,
+    cachedCravingHistory?.data,
+    cachedDashboard?.data,
+    cachedLiveCraving?.data,
+    cachedMonthlyReplay?.data,
+    cachedReplayHistory?.data,
+    cachedSmokeDna?.data,
+    cachedYearlyReplay?.data,
+    queriesEnabled,
+  ]);
+
   const dashboardQuery = useQuery({
     queryKey: queryKeys.dashboard,
     queryFn: async () => {
       try {
-        return await apiRequest<{ success: boolean } & DashboardPayload>("/api/stats/dashboard");
+        console.info("[insights-cache] GET /api/stats/dashboard via Insights queryFn; skipLoading=true.");
+        return await apiRequest<{ success: boolean } & DashboardPayload>("/api/stats/dashboard", { skipLoading: true });
       } catch {
         return createFallbackDashboard();
       }
     },
     enabled: queriesEnabled,
-    staleTime: 0,
+    ...insightsQueryOptions,
     initialData: cachedDashboard?.data,
     initialDataUpdatedAt: cachedDashboard?.updatedAt,
   });
@@ -111,13 +152,14 @@ export function useIntelligenceData() {
     queryKey: queryKeys.analytics,
     queryFn: async () => {
       try {
-        return await apiRequest<{ success: boolean; analytics: RoastAnalyticsPayload }>("/api/analytics/roast");
+        console.info("[insights-cache] GET /api/analytics/roast via Insights queryFn; skipLoading=true.");
+        return await apiRequest<{ success: boolean; analytics: RoastAnalyticsPayload }>("/api/analytics/roast", { skipLoading: true });
       } catch {
         return { analytics: createFallbackAnalytics() };
       }
     },
     enabled: queriesEnabled,
-    staleTime: 0,
+    ...insightsQueryOptions,
     initialData: cachedAnalytics?.data,
     initialDataUpdatedAt: cachedAnalytics?.updatedAt,
   });
@@ -126,13 +168,14 @@ export function useIntelligenceData() {
     queryKey: queryKeys.activity,
     queryFn: async () => {
       try {
-        return await apiRequest<{ success: boolean; activity: ActivityRow[] }>("/api/activity/recent?limit=30");
+        console.info("[insights-cache] GET /api/activity/recent?limit=30 via Insights queryFn; skipLoading=true.");
+        return await apiRequest<{ success: boolean; activity: ActivityRow[] }>("/api/activity/recent?limit=30", { skipLoading: true });
       } catch {
         return { activity: [] };
       }
     },
     enabled: queriesEnabled,
-    staleTime: 0,
+    ...insightsQueryOptions,
     initialData: cachedActivity?.data,
     initialDataUpdatedAt: cachedActivity?.updatedAt,
   });
@@ -141,13 +184,14 @@ export function useIntelligenceData() {
     queryKey: queryKeys.smokeDna,
     queryFn: async () => {
       try {
-        return await listSmokeDna(6);
+        console.info("[insights-cache] GET /api/smoke-dna via Insights queryFn; skipLoading=true.");
+        return await listSmokeDna(6, { skipLoading: true });
       } catch {
         return createFallbackSmokeDna();
       }
     },
     enabled: queriesEnabled,
-    staleTime: 0,
+    ...insightsQueryOptions,
     initialData: cachedSmokeDna?.data,
     initialDataUpdatedAt: cachedSmokeDna?.updatedAt,
   });
@@ -156,13 +200,14 @@ export function useIntelligenceData() {
     queryKey: queryKeys.smokeReplayHistory,
     queryFn: async () => {
       try {
-        return await listSmokeReplay(8);
+        console.info("[insights-cache] GET /api/smoke-replay via Insights queryFn; skipLoading=true.");
+        return await listSmokeReplay(8, { skipLoading: true });
       } catch {
         return [];
       }
     },
     enabled: queriesEnabled,
-    staleTime: 0,
+    ...insightsQueryOptions,
     initialData: cachedReplayHistory?.data,
     initialDataUpdatedAt: cachedReplayHistory?.updatedAt,
   });
@@ -171,13 +216,14 @@ export function useIntelligenceData() {
     queryKey: queryKeys.smokeReplayMonthly(currentYear, currentMonth),
     queryFn: async () => {
       try {
-        return await fetchMonthlyReplay(currentYear, currentMonth);
+        console.info("[insights-cache] GET /api/smoke-replay/monthly via Insights queryFn; skipLoading=true.", { currentYear, currentMonth });
+        return await fetchMonthlyReplay(currentYear, currentMonth, { skipLoading: true });
       } catch {
         return createFallbackReplayRecord();
       }
     },
     enabled: queriesEnabled,
-    staleTime: 0,
+    ...insightsQueryOptions,
     initialData: cachedMonthlyReplay?.data,
     initialDataUpdatedAt: cachedMonthlyReplay?.updatedAt,
   });
@@ -186,13 +232,14 @@ export function useIntelligenceData() {
     queryKey: queryKeys.smokeReplayYearly(currentYear),
     queryFn: async () => {
       try {
-        return await fetchYearlyReplay(currentYear);
+        console.info("[insights-cache] GET /api/smoke-replay/yearly via Insights queryFn; skipLoading=true.", { currentYear });
+        return await fetchYearlyReplay(currentYear, { skipLoading: true });
       } catch {
         return createFallbackReplayRecord();
       }
     },
     enabled: queriesEnabled,
-    staleTime: 0,
+    ...insightsQueryOptions,
     initialData: cachedYearlyReplay?.data,
     initialDataUpdatedAt: cachedYearlyReplay?.updatedAt,
   });
@@ -201,13 +248,14 @@ export function useIntelligenceData() {
     queryKey: queryKeys.cravingHistory,
     queryFn: async () => {
       try {
-        return await listCravingPredictions(12);
+        console.info("[insights-cache] GET /api/craving-predictions via Insights queryFn; skipLoading=true.");
+        return await listCravingPredictions(12, { skipLoading: true });
       } catch {
         return [];
       }
     },
     enabled: queriesEnabled,
-    staleTime: 0,
+    ...insightsQueryOptions,
     initialData: cachedCravingHistory?.data,
     initialDataUpdatedAt: cachedCravingHistory?.updatedAt,
   });
@@ -216,13 +264,14 @@ export function useIntelligenceData() {
     queryKey: queryKeys.cravingLive,
     queryFn: async () => {
       try {
-        return await fetchLiveCravingPrediction();
+        console.info("[insights-cache] GET /api/craving-predictions/live via Insights queryFn; skipLoading=true.");
+        return await fetchLiveCravingPrediction({ skipLoading: true });
       } catch {
         return createFallbackCravingPrediction();
       }
     },
     enabled: queriesEnabled,
-    staleTime: 0,
+    ...insightsQueryOptions,
     initialData: cachedLiveCraving?.data,
     initialDataUpdatedAt: cachedLiveCraving?.updatedAt,
   });
@@ -252,15 +301,23 @@ export function useIntelligenceData() {
   ]);
 
   const createSmokeDnaMutation = useMutation({
-    mutationFn: () => createSmokeDna(),
+    mutationFn: () => createSmokeDna({}, { skipLoading: true }),
+    onMutate: () => {
+      console.info("[insights-cache] Silent bootstrap mutation: POST /api/smoke-dna. This should not show the full-screen loader.");
+    },
     onSuccess: () => {
+      console.info("[insights-cache] Invalidating smokeDna after silent bootstrap mutation.");
       void queryClient.invalidateQueries({ queryKey: queryKeys.smokeDna });
     },
   });
 
   const createCravingMutation = useMutation({
-    mutationFn: () => createCravingPrediction({ predictionWindow: "30m" }),
+    mutationFn: () => createCravingPrediction({ predictionWindow: "30m" }, { skipLoading: true }),
+    onMutate: () => {
+      console.info("[insights-cache] Silent bootstrap mutation: POST /api/craving-predictions. This should not show the full-screen loader.");
+    },
     onSuccess: () => {
+      console.info("[insights-cache] Invalidating craving queries after silent bootstrap mutation.");
       void queryClient.invalidateQueries({ queryKey: queryKeys.cravingHistory });
       void queryClient.invalidateQueries({ queryKey: queryKeys.cravingLive });
     },
@@ -275,6 +332,11 @@ export function useIntelligenceData() {
     }
     if ((smokeDnaQuery.data?.items.length ?? 0) === 0) {
       smokeDnaBootstrappedRef.current = true;
+      console.info("[insights-cache] Smoke DNA bootstrap triggered on Insights mount.", {
+        hasDashboard: Boolean(dashboardQuery.data),
+        hasAnalytics: Boolean(analyticsQuery.data?.analytics),
+        smokeDnaItems: smokeDnaQuery.data?.items.length ?? 0,
+      });
       createSmokeDnaMutation.mutate();
     }
   }, [analyticsQuery.data?.analytics, createSmokeDnaMutation, dashboardQuery.data, queriesEnabled, smokeDnaQuery.data?.items.length, smokeDnaQuery.isLoading]);
@@ -288,6 +350,11 @@ export function useIntelligenceData() {
     }
     if ((cravingHistoryQuery.data?.length ?? 0) === 0) {
       cravingBootstrappedRef.current = true;
+      console.info("[insights-cache] Craving bootstrap triggered on Insights mount.", {
+        hasDashboard: Boolean(dashboardQuery.data),
+        cravingHistoryItems: cravingHistoryQuery.data?.length ?? 0,
+        liveCravingReady: Boolean(liveCravingQuery.data),
+      });
       createCravingMutation.mutate();
     }
   }, [createCravingMutation, cravingHistoryQuery.data?.length, dashboardQuery.data, liveCravingQuery.isLoading, queriesEnabled]);

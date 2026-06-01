@@ -224,7 +224,7 @@ apiClient.interceptors.request.use((config: ApiInternalConfig) => {
     console.info(`[api-debug] request headers for ${method} ${url}`, redactHeaders(config.headers.toJSON()));
   }
 
-  if (config.skipLoading !== true) {
+  if (config.skipLoading !== true && (method !== "GET" || config.loadingMessage)) {
     config.metadata.loadingId = loadingStore.startLoading(config.loadingMessage || loadingMessageForRequest(method, url));
   }
 

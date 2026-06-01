@@ -11,6 +11,7 @@ import { StatTile } from "@/components/lp/StatTile";
 import { apiRequest } from "@/lib/api";
 import { appStore, useAppStore } from "@/lib/app-store";
 import { readLocalQueryCache, writeLocalQueryCache } from "@/lib/local-query-cache";
+import { queryCacheTimes } from "@/lib/query-cache";
 import { queryKeys } from "@/lib/query-keys";
 import { sampleMemory, useRenderCounter, useScreenPerformance } from "@/lib/performance";
 import { formatSmokeFree, useSmokeFreeTicker } from "@/lib/time";
@@ -125,7 +126,7 @@ export function DashboardPage() {
     queryFn: () => apiRequest<DashboardResponse>("/api/stats/dashboard"),
     enabled: hydrated && isAuthenticated,
     refetchInterval: 60000,
-    staleTime: 0,
+    ...queryCacheTimes.dashboard,
     initialData: cachedDashboardQuery?.data,
     initialDataUpdatedAt: cachedDashboardQuery?.updatedAt,
   });

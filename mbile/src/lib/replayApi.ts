@@ -1,5 +1,9 @@
 import { apiRequest, type ApiResponse } from "@/lib/api";
 
+interface ReplayRequestOptions {
+  skipLoading?: boolean;
+}
+
 export interface ReplayAnalytics {
   cigarettesConsumed: number;
   moneyBurned: number;
@@ -51,18 +55,18 @@ function mapReplay(row: SmokeReplayRow): SmokeReplayRecord {
   };
 }
 
-export async function fetchMonthlyReplay(year: number, month: number) {
-  const response = await apiRequest<ApiResponse<SmokeReplayRow>>(`/api/smoke-replay/monthly?year=${year}&month=${month}`);
+export async function fetchMonthlyReplay(year: number, month: number, options: ReplayRequestOptions = {}) {
+  const response = await apiRequest<ApiResponse<SmokeReplayRow>>(`/api/smoke-replay/monthly?year=${year}&month=${month}`, options);
   return mapReplay(response.data);
 }
 
-export async function fetchYearlyReplay(year: number) {
-  const response = await apiRequest<ApiResponse<SmokeReplayRow>>(`/api/smoke-replay/yearly?year=${year}`);
+export async function fetchYearlyReplay(year: number, options: ReplayRequestOptions = {}) {
+  const response = await apiRequest<ApiResponse<SmokeReplayRow>>(`/api/smoke-replay/yearly?year=${year}`, options);
   return mapReplay(response.data);
 }
 
-export async function listSmokeReplay(limit = 12) {
-  const response = await apiRequest<ApiResponse<{ items: SmokeReplayRow[]; pagination: unknown }>>(`/api/smoke-replay?limit=${limit}`);
+export async function listSmokeReplay(limit = 12, options: ReplayRequestOptions = {}) {
+  const response = await apiRequest<ApiResponse<{ items: SmokeReplayRow[]; pagination: unknown }>>(`/api/smoke-replay?limit=${limit}`, options);
   return response.data.items.map(mapReplay);
 }
 

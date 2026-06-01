@@ -8,6 +8,7 @@ import { TopRegretCard } from "@/components/lp/analytics/TopRegretCard";
 import { apiRequest } from "@/lib/api";
 import { useAppStore } from "@/lib/app-store";
 import { readLocalQueryCache, writeLocalQueryCache } from "@/lib/local-query-cache";
+import { queryCacheTimes } from "@/lib/query-cache";
 import { queryKeys } from "@/lib/query-keys";
 
 interface AnalyticsPayload {
@@ -55,7 +56,7 @@ export function RoastContent() {
     queryKey: queryKeys.analytics,
     queryFn: () => apiRequest<{ success: boolean; analytics: AnalyticsPayload }>("/api/analytics/roast"),
     enabled: queriesEnabled,
-    staleTime: 0,
+    ...queryCacheTimes.insights,
     initialData: cachedAnalytics?.data,
     initialDataUpdatedAt: cachedAnalytics?.updatedAt,
   });
@@ -65,7 +66,7 @@ export function RoastContent() {
     queryFn: () =>
       apiRequest<{ success: boolean; highlights: AnalyticsPayload & { blockedLogs: Array<{ id: number; app_name: string; message: string | null }> } }>("/api/analytics/highlights"),
     enabled: queriesEnabled,
-    staleTime: 0,
+    ...queryCacheTimes.insights,
     initialData: cachedHighlights?.data,
     initialDataUpdatedAt: cachedHighlights?.updatedAt,
   });

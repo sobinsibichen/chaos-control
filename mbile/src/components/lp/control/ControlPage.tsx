@@ -90,6 +90,7 @@ interface CatalogApp {
 
 const fallbackAppIcon: keyof typeof iconMap = "LayoutGrid";
 const CONTROL_CACHE_KEY = "last-puff-control-cache";
+const CONTROL_CACHE_STALE_MS = 5 * 60 * 1000;
 const CONTROL_PERMISSION_WIZARD_KEY = "last-puff-control-permission-wizard-complete";
 
 function formatTime24(hour: number, minute: number) {
@@ -453,6 +454,7 @@ export default function ControlPage() {
   const [nativeProtectionStatus, setNativeProtectionStatus] = useState<NativeProtectionStatus | null>(null);
   const [permissionWizardOpen, setPermissionWizardOpen] = useState(false);
   const hasLoadedRef = useRef(false);
+  const controlCacheUpdatedAtRef = useRef(0);
   const installedAppsLoadedRef = useRef(false);
   const lastNativeSyncRef = useRef("");
   const blockTime = formatBlockWindow(blockHour, blockMinute, blockEndHour, blockEndMinute);
@@ -499,11 +501,13 @@ export default function ControlPage() {
         blockMinute?: number;
         blockEndHour?: number;
         blockEndMinute?: number;
+        updatedAt?: number;
       };
       if (parsed.apps?.length) {
         setApps(parsed.apps);
         setLoading(false);
         hasLoadedRef.current = true;
+        controlCacheUpdatedAtRef.current = parsed.updatedAt ?? 0;
       }
       if (typeof parsed.blockHour === "number" && typeof parsed.blockMinute === "number") {
         setBlockHour(parsed.blockHour);
@@ -535,6 +539,12 @@ export default function ControlPage() {
     }
 
     const loadApps = async () => {
+        const cacheIsFresh = hasLoadedRef.current && Date.now() - controlCacheUpdatedAtRef.current < CONTROL_CACHE_STALE_MS;
+        if (cacheIsFresh) {
+          void refreshNativeProtectionStatus().catch(() => {});
+          return;
+        }
+
         setLoading(!hasLoadedRef.current);
         setErrorMessage("");
         try {
@@ -750,8 +760,10 @@ export default function ControlPage() {
         blockMinute,
         blockEndHour,
         blockEndMinute,
+        updatedAt: Date.now(),
       }),
     );
+    controlCacheUpdatedAtRef.current = Date.now();
   }, [apps, blockEndHour, blockEndMinute, blockHour, blockMinute, blockTime]);
 
   const completePermissionWizard = () => {

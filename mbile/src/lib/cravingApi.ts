@@ -1,5 +1,9 @@
 import { apiRequest, type ApiResponse } from "@/lib/api";
 
+interface CravingRequestOptions {
+  skipLoading?: boolean;
+}
+
 export interface CravingHour {
   hour: number;
   score: number;
@@ -60,15 +64,16 @@ function mapPrediction(row: CravingPredictionRow): CravingPredictionRecord {
   };
 }
 
-export async function listCravingPredictions(limit = 12) {
+export async function listCravingPredictions(limit = 12, options: CravingRequestOptions = {}) {
   const response = await apiRequest<ApiResponse<{ items: CravingPredictionRow[]; pagination: unknown }>>(
     `/api/craving-predictions?limit=${limit}`,
+    options,
   );
   return response.data.items.map(mapPrediction);
 }
 
-export async function fetchLiveCravingPrediction() {
-  const response = await apiRequest<ApiResponse<Omit<CravingPredictionRow, "id" | "created_at">>>("/api/craving-predictions/live");
+export async function fetchLiveCravingPrediction(options: CravingRequestOptions = {}) {
+  const response = await apiRequest<ApiResponse<Omit<CravingPredictionRow, "id" | "created_at">>>("/api/craving-predictions/live", options);
   const triggerPrediction = response.data.trigger_prediction ?? {
     primary: "Routine loop",
     mood: "neutral",
@@ -111,10 +116,11 @@ export async function createCravingPrediction(payload: {
   stressLevel?: number | null;
   mood?: string | null;
   triggerContext?: string | null;
-}) {
+}, options: CravingRequestOptions = {}) {
   const response = await apiRequest<ApiResponse<CravingPredictionRow>>("/api/craving-predictions", {
     method: "POST",
     body: JSON.stringify(payload),
+    ...options,
   });
   return mapPrediction(response.data);
 }

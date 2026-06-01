@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { createFavoriteStore, deleteFavoriteStore, listFavoriteStores } from "@/lib/intelligenceApi";
 import { withLoader } from "@/lib/loading-store";
+import { queryCacheTimes } from "@/lib/query-cache";
 import { queryKeys } from "@/lib/query-keys";
 import { buildDirectionsUrl, type LatLngLiteral, type NearbyStore, searchNearbyStores } from "@/services/googlePlaces";
 
@@ -22,6 +23,7 @@ export function useNearbyPlaces(ready: boolean) {
   const favoriteStoresQuery = useQuery({
     queryKey: queryKeys.favoriteStores,
     queryFn: () => listFavoriteStores(100),
+    ...queryCacheTimes.nearby,
   });
 
   const favoriteIds = useMemo(

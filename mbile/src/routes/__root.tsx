@@ -14,7 +14,9 @@ import { LoadingOverlay } from "@/components/lp/LoadingOverlay";
 import appCss from "../styles.css?url";
 import { bootstrapAuth } from "@/lib/auth";
 import { perfLog, sampleMemory, useRenderCounter } from "@/lib/performance";
+import { prefetchCoreAppData } from "@/lib/prefetch";
 import { RealtimeProvider } from "@/lib/realtime";
+import { useAppStore } from "@/lib/app-store";
 
 function NotFoundComponent() {
   return (
@@ -129,6 +131,8 @@ function RootShell({ children }: { children: React.ReactNode }) {
 function RootComponent() {
   useRenderCounter("RootComponent");
   const { queryClient } = Route.useRouteContext();
+  const hydrated = useAppStore((state) => state.meta.hydrated);
+  const isAuthenticated = useAppStore((state) => state.auth.isAuthenticated);
 
   useEffect(() => {
     const startedAt = performance.now();
@@ -142,6 +146,12 @@ function RootComponent() {
       sampleMemory("app-bootstrap");
     });
   }, []);
+
+  useEffect(() => {
+    if (hydrated && isAuthenticated) {
+      prefetchCoreAppData(queryClient);
+    }
+  }, [hydrated, isAuthenticated, queryClient]);
 
   return (
     <QueryClientProvider client={queryClient}>

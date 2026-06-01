@@ -1,5 +1,9 @@
 import { apiRequest, type ApiResponse } from "@/lib/api";
 
+interface IntelligenceRequestOptions {
+  skipLoading?: boolean;
+}
+
 export interface PaginationMeta {
   page: number;
   limit: number;
@@ -186,8 +190,8 @@ function mapPaged<TInput, TOutput>(payload: PagedPayload<TInput>, mapper: (row: 
   };
 }
 
-export async function listSmokeDna(limit = 5) {
-  const response = await apiRequest<ApiResponse<PagedPayload<SmokeDnaRow>>>(`/api/smoke-dna?limit=${limit}`);
+export async function listSmokeDna(limit = 5, options: IntelligenceRequestOptions = {}) {
+  const response = await apiRequest<ApiResponse<PagedPayload<SmokeDnaRow>>>(`/api/smoke-dna?limit=${limit}`, options);
   return mapPaged(response.data, mapSmokeDna);
 }
 
@@ -195,10 +199,11 @@ export function createFallbackSmokeDna(): PagedPayload<SmokeDnaRecord> {
   return { items: [], pagination: { page: 1, limit: 5, total: 0, totalPages: 0 } };
 }
 
-export async function createSmokeDna(payload: Partial<SmokeDnaRecord> = {}) {
+export async function createSmokeDna(payload: Partial<SmokeDnaRecord> = {}, options: IntelligenceRequestOptions = {}) {
   const response = await apiRequest<ApiResponse<SmokeDnaRow>>("/api/smoke-dna", {
     method: "POST",
     body: JSON.stringify(payload),
+    ...options,
   });
   return mapSmokeDna(response.data);
 }
