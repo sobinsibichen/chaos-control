@@ -9,6 +9,10 @@ const legacyDefaultBlockedApps = [
   { appName: "Binance", packageName: "com.binance.dev" },
   { appName: "Ex", packageName: "lastpuff.ex.contact" },
 ];
+const bootstrapCache = new Map();
+const userStateRefreshTimers = new Map();
+const BOOTSTRAP_CACHE_TTL_MS = Number(process.env.BOOTSTRAP_CACHE_TTL_MS || 300000);
+const ANALYTICS_FRESH_MS = Number(process.env.ANALYTICS_FRESH_MS || 300000);
 
 function toNumber(value, fallback = 0) {
   const numeric = Number(value);
@@ -58,6 +62,77 @@ function getRecoveryStage(smokeFreeHours) {
   return "Circulation improving";
 }
 
+function markBootstrapDirty(userId) {
+  bootstrapCache.delete(String(userId));
+}
+
+function readJson(value, fallback) {
+  if (value == null) {
+    return fallback;
+  }
+  if (typeof value === "string") {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return fallback;
+    }
+  }
+  return value;
+}
+
+function createAnalyticsColumns(snapshot) {
+  const peakSingleDay = snapshot.dailyCigarettes.length ? Math.max(...snapshot.dailyCigarettes) : 0;
+  const weeklyTrend = snapshot.dailyCigarettes.length >= 2
+    ? snapshot.dailyCigarettes[snapshot.dailyCigarettes.length - 1] - snapshot.dailyCigarettes[0]
+    : 0;
+
+  return {
+    dailyCigarettesJson: snapshot.dailyCigarettes,
+    monthlyCigarettesJson: snapshot.monthlyCigarettes,
+    trendsJson: {
+      weeklyTrend,
+      direction: weeklyTrend < 0 ? "down" : weeklyTrend > 0 ? "up" : "flat",
+      peakSingleDay,
+      weeklyCigarettes: snapshot.weeklyCigarettes,
+      monthlyCigarettes: snapshot.monthlyCigarettes.reduce((sum, count) => sum + count, 0),
+    },
+    roastWorstDay: snapshot.worstDay,
+    healthScore: clamp(Math.round((snapshot.lungsRecoveryPercent + snapshot.focusScore + snapshot.stabilityLevel) / 3), 0, 100),
+    roastScore: clamp(Math.round(snapshot.todayCigarettes * 6 + snapshot.cigarettesOverBaselineWeekly * 4 + peakSingleDay * 2), 0, 100),
+  };
+}
+
+function scheduleUserStateRefresh(userId, source = "background") {
+  const cacheKey = String(userId);
+  if (userStateRefreshTimers.has(cacheKey)) {
+    return;
+  }
+
+  const timer = setTimeout(async () => {
+    userStateRefreshTimers.delete(cacheKey);
+    try {
+      const startedAt = process.hrtime.bigint();
+      await syncUserState(userId);
+      console.info("[perf:analytics:refresh]", {
+        userId,
+        source,
+        durationMs: Math.round(Number(process.hrtime.bigint() - startedAt) / 1e6),
+      });
+    } catch (error) {
+      console.warn("Background analytics refresh failed", {
+        userId,
+        source,
+        message: error.message,
+      });
+    }
+  }, Number(process.env.ANALYTICS_REFRESH_DELAY_MS || 25));
+
+  if (typeof timer.unref === "function") {
+    timer.unref();
+  }
+  userStateRefreshTimers.set(cacheKey, timer);
+}
+
 function formatRelativeDuration(seconds) {
   const safeSeconds = Math.max(0, Math.floor(seconds));
   const hours = Math.floor(safeSeconds / 3600);
@@ -105,6 +180,12 @@ function getOnlineStatus(lastActive) {
 }
 
 async function ensureUserBootstrap(userId, db = pool) {
+  const cacheKey = String(userId);
+  const cached = bootstrapCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.cigarettePrice;
+  }
+
   const userResult = await db.query(
     "SELECT cigarette_price FROM public.users WHERE id = $1 LIMIT 1",
     [userId],
@@ -186,6 +267,12 @@ async function ensureUserBootstrap(userId, db = pool) {
   if (matchesLegacyDefaults) {
     await db.query("DELETE FROM public.blocked_apps WHERE user_id = $1", [userId]);
   }
+
+  bootstrapCache.set(cacheKey, {
+    cigarettePrice,
+    expiresAt: Date.now() + BOOTSTRAP_CACHE_TTL_MS,
+  });
+  return cigarettePrice;
 }
 
 async function addActivity(userId, activityType, title, description, db = pool) {
@@ -294,9 +381,7 @@ async function buildSnapshot(userId, db = pool) {
   const [
     userResult,
     statsResult,
-    totalResult,
-    todayResult,
-    weeklyResult,
+    cigaretteTotalsResult,
     quitResult,
     activeQuitResult,
     blockedResult,
@@ -305,6 +390,8 @@ async function buildSnapshot(userId, db = pool) {
     dailyResult,
     levelsResult,
     insightsResult,
+    avoidedResult,
+    worstDayResult,
   ] = await Promise.all([
     db.query("SELECT id, name, email, created_at, cigarette_price, visibility_enabled FROM public.users WHERE id = $1", [userId]),
     db.query("SELECT * FROM public.user_stats WHERE user_id = $1 LIMIT 1", [userId]),
@@ -312,25 +399,11 @@ async function buildSnapshot(userId, db = pool) {
       `
         SELECT
           COALESCE(SUM(cigarettes_count), 0)::int AS total_cigarettes,
-          COALESCE(SUM(cigarettes_count * price_per_unit), 0)::numeric AS total_money
+          COALESCE(SUM(cigarettes_count * price_per_unit), 0)::numeric AS total_money,
+          COALESCE(SUM(cigarettes_count) FILTER (WHERE logged_at >= CURRENT_DATE AND logged_at < CURRENT_DATE + INTERVAL '1 day'), 0)::int AS today_cigarettes,
+          COALESCE(SUM(cigarettes_count) FILTER (WHERE logged_at >= NOW() - INTERVAL '7 days'), 0)::int AS weekly_cigarettes
         FROM public.cigarette_logs
         WHERE user_id = $1
-      `,
-      [userId],
-    ),
-    db.query(
-      `
-        SELECT COALESCE(SUM(cigarettes_count), 0)::int AS today_cigarettes
-        FROM public.cigarette_logs
-        WHERE user_id = $1 AND logged_at::date = CURRENT_DATE
-      `,
-      [userId],
-    ),
-    db.query(
-      `
-        SELECT COALESCE(SUM(cigarettes_count), 0)::int AS weekly_cigarettes
-        FROM public.cigarette_logs
-        WHERE user_id = $1 AND logged_at >= NOW() - INTERVAL '7 days'
       `,
       [userId],
     ),
@@ -423,15 +496,79 @@ async function buildSnapshot(userId, db = pool) {
       `,
       [userId],
     ),
+    db.query(
+      `
+        WITH user_settings AS (
+          SELECT
+            COALESCE(NULLIF(us.daily_smoking_average, 0), 10)::numeric AS daily_smoking_average,
+            COALESCE(u.created_at::date, CURRENT_DATE) AS tracking_start_date
+          FROM public.users u
+          LEFT JOIN public.user_stats us ON us.user_id = u.id
+          WHERE u.id = $1
+          LIMIT 1
+        ),
+        day_series AS (
+          SELECT generate_series(
+            (SELECT tracking_start_date FROM user_settings),
+            CURRENT_DATE,
+            interval '1 day'
+          )::date AS day_start
+        ),
+        daily_totals AS (
+          SELECT logged_at::date AS day_start, COALESCE(SUM(cigarettes_count), 0)::int AS total
+          FROM public.cigarette_logs
+          WHERE user_id = $1
+          GROUP BY logged_at::date
+        )
+        SELECT
+          COALESCE(SUM(GREATEST((SELECT daily_smoking_average FROM user_settings) - COALESCE(daily_totals.total, 0), 0)), 0)::int AS cumulative_avoided,
+          COALESCE(SUM(GREATEST(COALESCE(daily_totals.total, 0) - (SELECT daily_smoking_average FROM user_settings), 0)), 0)::int AS cumulative_over,
+          COALESCE(
+            SUM(
+              CASE
+                WHEN day_series.day_start >= CURRENT_DATE - interval '6 days'
+                  THEN GREATEST((SELECT daily_smoking_average FROM user_settings) - COALESCE(daily_totals.total, 0), 0)
+                ELSE 0
+              END
+            ),
+            0
+          )::int AS weekly_avoided,
+          COALESCE(
+            SUM(
+              CASE
+                WHEN day_series.day_start >= CURRENT_DATE - interval '6 days'
+                  THEN GREATEST(COALESCE(daily_totals.total, 0) - (SELECT daily_smoking_average FROM user_settings), 0)
+                ELSE 0
+              END
+            ),
+            0
+          )::int AS weekly_over
+        FROM day_series
+        LEFT JOIN daily_totals
+          ON daily_totals.day_start = day_series.day_start
+      `,
+      [userId],
+    ),
+    db.query(
+      `
+        SELECT logged_at::date AS day, SUM(cigarettes_count)::int AS total
+        FROM public.cigarette_logs
+        WHERE user_id = $1
+        GROUP BY logged_at::date
+        ORDER BY total DESC, day DESC
+        LIMIT 1
+      `,
+      [userId],
+    ),
   ]);
 
   const user = userResult.rows[0];
   const statsRow = statsResult.rows[0];
   const levels = levelsResult.rows;
-  const totalCigarettes = toNumber(totalResult.rows[0]?.total_cigarettes);
-  const totalMoneyBurned = toNumber(totalResult.rows[0]?.total_money);
-  const todayCigarettes = toNumber(todayResult.rows[0]?.today_cigarettes);
-  const weeklyCigarettes = toNumber(weeklyResult.rows[0]?.weekly_cigarettes);
+  const totalCigarettes = toNumber(cigaretteTotalsResult.rows[0]?.total_cigarettes);
+  const totalMoneyBurned = toNumber(cigaretteTotalsResult.rows[0]?.total_money);
+  const todayCigarettes = toNumber(cigaretteTotalsResult.rows[0]?.today_cigarettes);
+  const weeklyCigarettes = toNumber(cigaretteTotalsResult.rows[0]?.weekly_cigarettes);
   const quitCount = toNumber(quitResult.rows[0]?.quit_count);
   const blockedBuys = toNumber(blockedResult.rows[0]?.blocked_buys);
   const blockedMoneySaved = toNumber(blockedResult.rows[0]?.blocked_money_saved);
@@ -440,47 +577,6 @@ async function buildSnapshot(userId, db = pool) {
   const dailyCigarettes = dailyResult.rows.map((row) => toNumber(row.total));
   const cigarettePrice = toNumber(statsRow?.price_per_cigarette, toNumber(user?.cigarette_price, 20));
   const dailySmokingAverage = Math.max(1, toNumber(statsRow?.daily_smoking_average, 10));
-  const trackingStartDate = new Date(user?.created_at || Date.now()).toISOString().slice(0, 10);
-  const avoidedResult = await db.query(
-    `
-      WITH day_series AS (
-        SELECT generate_series($2::date, CURRENT_DATE, interval '1 day')::date AS day_start
-      ),
-      daily_totals AS (
-        SELECT logged_at::date AS day_start, COALESCE(SUM(cigarettes_count), 0)::int AS total
-        FROM public.cigarette_logs
-        WHERE user_id = $1
-        GROUP BY logged_at::date
-      )
-      SELECT
-        COALESCE(SUM(GREATEST($3 - COALESCE(daily_totals.total, 0), 0)), 0)::int AS cumulative_avoided,
-        COALESCE(SUM(GREATEST(COALESCE(daily_totals.total, 0) - $3, 0)), 0)::int AS cumulative_over,
-        COALESCE(
-          SUM(
-            CASE
-              WHEN day_series.day_start >= CURRENT_DATE - interval '6 days'
-                THEN GREATEST($3 - COALESCE(daily_totals.total, 0), 0)
-              ELSE 0
-            END
-          ),
-          0
-        )::int AS weekly_avoided,
-        COALESCE(
-          SUM(
-            CASE
-              WHEN day_series.day_start >= CURRENT_DATE - interval '6 days'
-                THEN GREATEST(COALESCE(daily_totals.total, 0) - $3, 0)
-              ELSE 0
-            END
-          ),
-          0
-        )::int AS weekly_over
-      FROM day_series
-      LEFT JOIN daily_totals
-        ON daily_totals.day_start = day_series.day_start
-    `,
-    [userId, trackingStartDate, dailySmokingAverage],
-  );
   const smokeFreeStartedAt = statsRow?.smoke_free_started_at ? new Date(statsRow.smoke_free_started_at) : null;
   const smokeFreeSeconds = smokeFreeStartedAt ? Math.max(0, Math.floor((Date.now() - smokeFreeStartedAt.getTime()) / 1000)) : 0;
   const smokeFreeHours = smokeFreeSeconds / 3600;
@@ -549,6 +645,7 @@ async function buildSnapshot(userId, db = pool) {
     levels,
     statsRow,
     activeQuitAttempt: activeQuitResult.rows[0] || null,
+    worstDay: worstDayResult.rows[0] || null,
     totalCigarettes,
     totalMoneyBurned,
     todayCigarettes,
@@ -601,6 +698,7 @@ async function buildSnapshot(userId, db = pool) {
 
 async function syncUserState(userId, db = pool) {
   const snapshot = await buildSnapshot(userId, db);
+  const analyticsColumns = createAnalyticsColumns(snapshot);
   const previousLevel = toNumber(snapshot.statsRow?.current_level, 1);
   const previousHighestStreak = toNumber(snapshot.statsRow?.highest_streak);
   const previousStreak = toNumber(snapshot.statsRow?.current_streak, 0);
@@ -627,6 +725,22 @@ async function syncUserState(userId, db = pool) {
         cigarettes_avoided_total = $16,
         daily_smoking_average = $17,
         price_per_cigarette = $18,
+        weekly_savings = $19,
+        weekly_cigarettes = $20,
+        weekly_avoided = $21,
+        cigarettes_over_baseline_today = $22,
+        cigarettes_over_baseline_weekly = $23,
+        cigarettes_over_baseline_total = $24,
+        xp_points = $25,
+        level_progress_percent = $26,
+        longest_smoke_free_seconds = $27,
+        daily_cigarettes_json = $28::jsonb,
+        monthly_cigarettes_json = $29::jsonb,
+        trends_json = $30::jsonb,
+        health_score = $31,
+        roast_score = $32,
+        roast_worst_day = $33::jsonb,
+        analytics_precomputed_at = NOW(),
         updated_at = NOW()
       WHERE user_id = $1
     `,
@@ -649,6 +763,21 @@ async function syncUserState(userId, db = pool) {
       snapshot.cigarettesAvoidedTotal,
       snapshot.dailySmokingAverage,
       snapshot.cigarettePrice,
+      snapshot.weeklySavings,
+      snapshot.weeklyCigarettes,
+      snapshot.cigarettesAvoidedWeekly,
+      snapshot.cigarettesOverBaselineToday,
+      snapshot.cigarettesOverBaselineWeekly,
+      snapshot.cigarettesOverBaselineTotal,
+      snapshot.xpPoints,
+      snapshot.levelProgressPercent,
+      snapshot.longestQuitSeconds,
+      JSON.stringify(analyticsColumns.dailyCigarettesJson),
+      JSON.stringify(analyticsColumns.monthlyCigarettesJson),
+      JSON.stringify(analyticsColumns.trendsJson),
+      analyticsColumns.healthScore,
+      analyticsColumns.roastScore,
+      JSON.stringify(analyticsColumns.roastWorstDay),
     ],
   );
 
@@ -790,9 +919,165 @@ function createDashboardPayload(snapshot, notifications = []) {
   };
 }
 
+function getRoastAnalyticsFromSnapshot(snapshot) {
+  const peakSingleDay = snapshot.dailyCigarettes.length ? Math.max(...snapshot.dailyCigarettes) : 0;
+  const analyticsColumns = createAnalyticsColumns(snapshot);
+
+  return {
+    annualSpend: Math.round(snapshot.totalMoneyBurned),
+    dailyAverage: Math.round(snapshot.dailySmokingAverage * snapshot.cigarettePrice),
+    monthlyProjection: Math.round(snapshot.dailySmokingAverage * 30 * snapshot.cigarettePrice),
+    worstDay: snapshot.worstDay || null,
+    peakSingleDay,
+    highestDailySpend: peakSingleDay * snapshot.cigarettePrice,
+    blockedPurchases: snapshot.blockedBuys,
+    monthlyCigarettes: snapshot.monthlyCigarettes,
+    cigarettePrice: snapshot.cigarettePrice,
+    currencySymbol: "Rs",
+    todaySavings: snapshot.todaySavings,
+    weeklySavings: snapshot.weeklySavings,
+    totalSavings: snapshot.totalSavings,
+    currentStreak: snapshot.currentStreak,
+    lungsRecoveryPercent: snapshot.lungsRecoveryPercent,
+    recoveryStage: snapshot.recoveryStage,
+    cigarettesAvoidedTotal: snapshot.cigarettesAvoidedTotal,
+    healthScore: analyticsColumns.healthScore,
+    roastScore: analyticsColumns.roastScore,
+    trends: analyticsColumns.trendsJson,
+    precomputedAt: null,
+  };
+}
+
 async function getDashboardData(userId) {
-  const { snapshot, notifications } = await syncUserState(userId);
-  return createDashboardPayload(snapshot, notifications);
+  await ensureUserBootstrap(userId);
+
+  const [result, activity] = await Promise.all([
+    pool.query(
+      `
+        SELECT
+          u.id,
+          u.name,
+          u.email,
+          u.cigarette_price,
+          u.visibility_enabled,
+          us.today_cigarettes,
+          us.total_cigarettes,
+          us.money_burned,
+          us.savings,
+          us.weekly_savings,
+          us.weekly_cigarettes,
+          us.blocked_buys,
+          us.focus_level,
+          us.regret_level,
+          us.stability_level,
+          us.current_streak,
+          us.highest_streak,
+          us.current_level,
+          us.smoke_free_started_at,
+          us.lungs_recovery_percent,
+          us.cigarettes_avoided_today,
+          us.cigarettes_avoided_total,
+          us.daily_smoking_average,
+          us.price_per_cigarette,
+          us.level_progress_percent,
+          us.longest_smoke_free_seconds,
+          l.level_name,
+          l.reward_title,
+          next_level.level_number AS next_level_number,
+          next_level.level_name AS next_level_name,
+          next_level.required_points AS next_required_points
+        FROM public.users u
+        JOIN public.user_stats us ON us.user_id = u.id
+        LEFT JOIN public.levels l ON l.level_number = us.current_level
+        LEFT JOIN LATERAL (
+          SELECT level_number, level_name, required_points
+          FROM public.levels
+          WHERE level_number > COALESCE(us.current_level, 1)
+          ORDER BY level_number ASC
+          LIMIT 1
+        ) next_level ON TRUE
+        WHERE u.id = $1
+        LIMIT 1
+      `,
+      [userId],
+    ),
+    getRecentActivity(userId, 5),
+  ]);
+
+  const row = result.rows[0];
+  if (!row) {
+    const error = new Error("Session user was not found in the database. Please log in again.");
+    error.status = 401;
+    throw error;
+  }
+
+  const smokeFreeStartedAt = row.smoke_free_started_at ? new Date(row.smoke_free_started_at) : null;
+  const smokeFreeSeconds = smokeFreeStartedAt ? Math.max(0, Math.floor((Date.now() - smokeFreeStartedAt.getTime()) / 1000)) : 0;
+  const focusScore = clamp(100 - toNumber(row.regret_level), 0, 100);
+  const recoveryStage = getRecoveryStage(smokeFreeSeconds / 3600);
+
+  return {
+    user: {
+      id: row.id,
+      name: row.name,
+      email: row.email,
+      cigarettePrice: toNumber(row.price_per_cigarette, toNumber(row.cigarette_price, 20)),
+      visibilityEnabled: Boolean(row.visibility_enabled),
+    },
+    dailyStatus: {
+      regretLevel: toNumber(row.regret_level),
+      stabilityLevel: toNumber(row.stability_level, 100),
+      focusLevel: row.focus_level || "HIGH",
+      focusScore,
+      score: focusScore,
+      recoveryStage,
+    },
+    smokeFree: {
+      startedAt: smokeFreeStartedAt ? smokeFreeStartedAt.toISOString() : null,
+      seconds: smokeFreeSeconds,
+    },
+    streak: {
+      current: toNumber(row.current_streak),
+      highest: toNumber(row.highest_streak),
+    },
+    level: {
+      current: toNumber(row.current_level, 1),
+      name: row.level_name || "Starter",
+      rewardTitle: row.reward_title || "One breath at a time",
+      next: row.next_level_number
+        ? {
+            level: toNumber(row.next_level_number),
+            name: row.next_level_name,
+            requiredPoints: toNumber(row.next_required_points),
+          }
+        : null,
+      progressPercent: toNumber(row.level_progress_percent),
+    },
+    lungs: {
+      percent: toNumber(row.lungs_recovery_percent),
+      stage: recoveryStage,
+    },
+    savings: {
+      today: toNumber(row.cigarettes_avoided_today) * toNumber(row.price_per_cigarette, 20),
+      weekly: toNumber(row.weekly_savings),
+      total: toNumber(row.savings),
+      avoidedToday: toNumber(row.cigarettes_avoided_today),
+      avoidedTotal: toNumber(row.cigarettes_avoided_total),
+    },
+    stats: {
+      todayCount: toNumber(row.today_cigarettes),
+      quitsCount: 0,
+      totalCigarettes: toNumber(row.total_cigarettes),
+      moneyBurned: toNumber(row.money_burned),
+      blockedBuys: toNumber(row.blocked_buys),
+      focusLevel: row.focus_level || "HIGH",
+      dailySmokingAverage: toNumber(row.daily_smoking_average, 10),
+      cigarettePrice: toNumber(row.price_per_cigarette, 20),
+      longestSmokeFreeSeconds: Math.max(toNumber(row.longest_smoke_free_seconds), smokeFreeSeconds),
+    },
+    notifications: [],
+    activity,
+  };
 }
 
 async function logCigarette(userId, payload) {
@@ -1041,31 +1326,48 @@ async function emitUserRealtimeState(userId, payload = {}) {
 
 async function getAppsData(userId) {
   await ensureUserBootstrap(userId);
-  const [appsResult, scheduleResult] = await Promise.all([
-    pool.query(
-      `
-        SELECT id, app_name, package_name, app_icon, warning_message, is_active, created_at
+  const { rows } = await pool.query(
+    `
+      WITH apps AS (
+        SELECT COALESCE(
+          jsonb_agg(
+            jsonb_build_object(
+              'id', id,
+              'app_name', app_name,
+              'package_name', package_name,
+              'app_icon', app_icon,
+              'warning_message', warning_message,
+              'is_active', is_active,
+              'created_at', created_at
+            )
+            ORDER BY id
+          ),
+          '[]'::jsonb
+        ) AS items
         FROM public.blocked_apps
         WHERE user_id = $1
-        ORDER BY id
-      `,
-      [userId],
-    ),
-    pool.query(
-      `
-        SELECT id, block_time, frequency, enabled, created_at
-        FROM public.block_schedules
-        WHERE user_id = $1
-        ORDER BY created_at DESC
-        LIMIT 1
-      `,
-      [userId],
-    ),
-  ]);
+      ),
+      schedule AS (
+        SELECT to_jsonb(row) AS item
+        FROM (
+          SELECT id, block_time, frequency, enabled, created_at
+          FROM public.block_schedules
+          WHERE user_id = $1
+          ORDER BY created_at DESC
+          LIMIT 1
+        ) row
+      )
+      SELECT apps.items AS apps, schedule.item AS schedule
+      FROM apps
+      LEFT JOIN schedule ON TRUE
+    `,
+    [userId],
+  );
+  const row = rows[0] || {};
 
   return {
-    apps: appsResult.rows,
-    schedule: scheduleResult.rows[0] || null,
+    apps: readJson(row.apps, []),
+    schedule: readJson(row.schedule, null),
   };
 }
 
@@ -1221,6 +1523,7 @@ async function saveBlockSchedule(userId, payload) {
   );
 
   await addActivity(userId, "schedule_updated", "Block schedule saved", `Daily block schedule updated to ${blockTime}.`);
+  scheduleUserStateRefresh(userId, "schedule_changed");
   await emitUserRealtimeState(userId, { source: "schedule_updated" });
   return rows[0];
 }
@@ -1237,47 +1540,85 @@ async function saveVerificationAttempt(userId, payload) {
 }
 
 async function getRoastAnalytics(userId) {
-  const { snapshot } = await syncUserState(userId);
-  const monthlyProjection = Math.round(snapshot.dailySmokingAverage * 30 * snapshot.cigarettePrice);
-  const annualSpend = Math.round(snapshot.totalMoneyBurned);
-  const dailyAverageSpend = Math.round(snapshot.dailySmokingAverage * snapshot.cigarettePrice);
+  await ensureUserBootstrap(userId);
 
-  const worstDayResult = await pool.query(
+  const { rows } = await pool.query(
     `
-      SELECT logged_at::date AS day, SUM(cigarettes_count)::int AS total
-      FROM public.cigarette_logs
-      WHERE user_id = $1
-      GROUP BY logged_at::date
-      ORDER BY total DESC, day DESC
+      SELECT
+        us.total_cigarettes,
+        us.money_burned,
+        us.savings,
+        us.weekly_savings,
+        us.current_streak,
+        us.lungs_recovery_percent,
+        us.cigarettes_avoided_today,
+        us.cigarettes_avoided_total,
+        us.daily_smoking_average,
+        us.price_per_cigarette,
+        us.weekly_cigarettes,
+        us.blocked_buys,
+        us.daily_cigarettes_json,
+        us.monthly_cigarettes_json,
+        us.trends_json,
+        us.roast_worst_day,
+        us.health_score,
+        us.roast_score,
+        us.analytics_precomputed_at,
+        us.smoke_free_started_at
+      FROM public.user_stats us
+      WHERE us.user_id = $1
       LIMIT 1
     `,
     [userId],
   );
+  const row = rows[0];
+  if (!row) {
+    const { snapshot } = await syncUserState(userId);
+    return getRoastAnalyticsFromSnapshot(snapshot);
+  }
+
+  const precomputedAt = row.analytics_precomputed_at ? new Date(row.analytics_precomputed_at).getTime() : 0;
+  if (!precomputedAt || Date.now() - precomputedAt > ANALYTICS_FRESH_MS) {
+    scheduleUserStateRefresh(userId, "stale_roast_read");
+  }
+
+  const cigarettePrice = toNumber(row.price_per_cigarette, 20);
+  const dailySmokingAverage = Math.max(1, toNumber(row.daily_smoking_average, 10));
+  const dailyCigarettes = readJson(row.daily_cigarettes_json, []);
+  const monthlyCigarettes = readJson(row.monthly_cigarettes_json, []);
+  const peakSingleDay = dailyCigarettes.length ? Math.max(...dailyCigarettes.map((value) => toNumber(value))) : 0;
+  const smokeFreeStartedAt = row.smoke_free_started_at ? new Date(row.smoke_free_started_at) : null;
+  const smokeFreeHours = smokeFreeStartedAt ? Math.max(0, (Date.now() - smokeFreeStartedAt.getTime()) / 3600000) : 0;
 
   return {
-    annualSpend,
-    dailyAverage: dailyAverageSpend,
-    monthlyProjection,
-    worstDay: worstDayResult.rows[0] || null,
-    peakSingleDay: snapshot.dailyCigarettes.length ? Math.max(...snapshot.dailyCigarettes) : 0,
-    highestDailySpend: (snapshot.dailyCigarettes.length ? Math.max(...snapshot.dailyCigarettes) : 0) * snapshot.cigarettePrice,
-    blockedPurchases: snapshot.blockedBuys,
-    monthlyCigarettes: snapshot.monthlyCigarettes,
-    cigarettePrice: snapshot.cigarettePrice,
+    annualSpend: Math.round(toNumber(row.money_burned)),
+    dailyAverage: Math.round(dailySmokingAverage * cigarettePrice),
+    monthlyProjection: Math.round(dailySmokingAverage * 30 * cigarettePrice),
+    worstDay: readJson(row.roast_worst_day, null),
+    peakSingleDay,
+    highestDailySpend: peakSingleDay * cigarettePrice,
+    blockedPurchases: toNumber(row.blocked_buys),
+    monthlyCigarettes,
+    cigarettePrice,
     currencySymbol: "Rs",
-    todaySavings: snapshot.todaySavings,
-    weeklySavings: snapshot.weeklySavings,
-    totalSavings: snapshot.totalSavings,
-    currentStreak: snapshot.currentStreak,
-    lungsRecoveryPercent: snapshot.lungsRecoveryPercent,
-    recoveryStage: snapshot.recoveryStage,
-    cigarettesAvoidedTotal: snapshot.cigarettesAvoidedTotal,
+    todaySavings: toNumber(row.cigarettes_avoided_today) * cigarettePrice,
+    weeklySavings: toNumber(row.weekly_savings),
+    totalSavings: toNumber(row.savings),
+    currentStreak: toNumber(row.current_streak),
+    lungsRecoveryPercent: toNumber(row.lungs_recovery_percent),
+    recoveryStage: getRecoveryStage(smokeFreeHours),
+    cigarettesAvoidedTotal: toNumber(row.cigarettes_avoided_total),
+    healthScore: toNumber(row.health_score),
+    roastScore: toNumber(row.roast_score),
+    trends: readJson(row.trends_json, {}),
+    precomputedAt: row.analytics_precomputed_at,
   };
 }
 
 async function getRoastHighlights(userId) {
-  const analytics = await getRoastAnalytics(userId);
-  const blockedLogs = await pool.query(
+  const [analytics, blockedLogs] = await Promise.all([
+    getRoastAnalytics(userId),
+    pool.query(
     `
       SELECT id, app_name, message, money_saved, blocked_at
       FROM public.blocked_activity_logs
@@ -1286,7 +1627,8 @@ async function getRoastHighlights(userId) {
       LIMIT 5
     `,
     [userId],
-  );
+    ),
+  ]);
 
   return {
     ...analytics,
@@ -1433,13 +1775,19 @@ async function runRadarScan(userId) {
 
   await pool.query("DELETE FROM public.nearby_users WHERE user_id = $1", [userId]);
 
-  for (const nearbyUser of users) {
+  if (users.length) {
+    const values = [];
+    const placeholders = users.map((nearbyUser, index) => {
+      const offset = index * 3;
+      values.push(userId, Number(nearbyUser.id), nearbyUser.distanceMeters / 1000);
+      return `($${offset + 1}, $${offset + 2}, $${offset + 3}, NOW())`;
+    });
     await pool.query(
       `
         INSERT INTO public.nearby_users (user_id, nearby_user_id, distance_km, detected_at)
-        VALUES ($1, $2, $3, NOW())
+        VALUES ${placeholders.join(", ")}
       `,
-      [userId, Number(nearbyUser.id), nearbyUser.distanceMeters / 1000],
+      values,
     );
   }
 
@@ -1575,6 +1923,7 @@ async function getProfileData(userId) {
 }
 
 async function updateCigarettePrice(userId, price) {
+  markBootstrapDirty(userId);
   await pool.query(
     `
       UPDATE public.users
@@ -1593,12 +1942,14 @@ async function updateCigarettePrice(userId, price) {
   );
 
   await emitUserRealtimeState(userId, { source: "price_updated" });
+  scheduleUserStateRefresh(userId, "quit_plan_changed");
   return getProfileData(userId);
 }
 
 async function updateSmokingPreferences(userId, payload) {
   const price = Math.max(1, toNumber(payload.cigarettePrice, 20));
   const dailySmokingAverage = Math.max(1, toNumber(payload.dailySmokingAverage, 10));
+  markBootstrapDirty(userId);
   await pool.query(
     `
       UPDATE public.users
@@ -1617,6 +1968,7 @@ async function updateSmokingPreferences(userId, payload) {
   );
 
   await emitUserRealtimeState(userId, { source: "preferences_updated" });
+  scheduleUserStateRefresh(userId, "quit_plan_changed");
   return getProfileData(userId);
 }
 

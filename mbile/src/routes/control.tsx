@@ -26,6 +26,8 @@ import { GlassCard } from "@/components/lp/GlassCard";
 import { MentalStabilityChallenge } from "@/components/lp/damage/MentalStabilityChallenge";
 import { apiRequest } from "@/lib/api";
 import { appStore, useAppStore } from "@/lib/app-store";
+import { enqueueBackgroundSync } from "@/lib/background-sync";
+import { sampleMemory, useRenderCounter, useScreenPerformance } from "@/lib/performance";
 import { requireAuth } from "@/lib/route-guards";
 import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 import {
@@ -212,7 +214,7 @@ function PermissionWizard({
     }
   }, [nextStep, onComplete]);
 
-  const stepConfig = {
+  const stepConfig: Record<PermissionWizardStep, { title: string; description: string; primary: string; secondary?: string }> = {
     intro: {
       title: "Last Puff needs permissions to protect your focus",
       description: "We'll open the exact Android screens and move forward as soon as each permission is granted.",
@@ -249,7 +251,7 @@ function PermissionWizard({
       description: "All required permissions are active. Last Puff can monitor and block continuously now.",
       primary: "Continue",
     },
-  } satisfies Record<PermissionWizardStep, { title: string; description: string; primary: string; secondary?: string }>;
+  };
 
   useEffect(() => {
     if (!open) {
@@ -432,6 +434,7 @@ function isNativePluginUnavailable(error: unknown) {
 }
 
 function ControlPage() {
+  useRenderCounter("ControlPage");
   const hydrated = useAppStore((state) => state.meta.hydrated);
   const isAuthenticated = useAppStore((state) => state.auth.isAuthenticated);
   const unlockedApps = useAppStore((state) => state.damage.unlockedApps);
@@ -448,9 +451,11 @@ function ControlPage() {
   const [draftSelectedPackages, setDraftSelectedPackages] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [pickerLoading, setPickerLoading] = useState(false);
+  const [pickerScrollTop, setPickerScrollTop] = useState(0);
   const [savingSchedule, setSavingSchedule] = useState(false);
   const [savingSelection, setSavingSelection] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [scheduleSuccessMessage, setScheduleSuccessMessage] = useState("");
   const [savedNotifications, setSavedNotifications] = useState<string[]>([]);
   const [installedApps, setInstalledApps] = useState<CatalogApp[]>([]);
   const [nativeProtectionStatus, setNativeProtectionStatus] = useState<NativeProtectionStatus | null>(null);
@@ -460,6 +465,13 @@ function ControlPage() {
   const lastNativeSyncRef = useRef("");
   const blockTime = formatBlockWindow(blockHour, blockMinute, blockEndHour, blockEndMinute);
   useBodyScrollLock(permissionWizardOpen || pickerOpen);
+  useScreenPerformance("control", !loading && hasLoadedRef.current);
+
+  useEffect(() => {
+    if (!loading && hasLoadedRef.current) {
+      sampleMemory("control-ready");
+    }
+  }, [loading]);
 
   const refreshNativeProtectionStatus = useCallback(async () => {
     if (!isNativeAndroid()) {
@@ -498,6 +510,8 @@ function ControlPage() {
       };
       if (parsed.apps?.length) {
         setApps(parsed.apps);
+        setLoading(false);
+        hasLoadedRef.current = true;
       }
       if (typeof parsed.blockHour === "number" && typeof parsed.blockMinute === "number") {
         setBlockHour(parsed.blockHour);
@@ -524,29 +538,26 @@ function ControlPage() {
   }, []);
 
   useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    const complete = window.localStorage.getItem(CONTROL_PERMISSION_WIZARD_KEY) === "true";
-    setPermissionWizardComplete(complete);
-  }, []);
-
-  useEffect(() => {
     if (!hydrated || !isAuthenticated) {
       return;
     }
 
     const loadApps = async () => {
-        setLoading(true);
+        setLoading(!hasLoadedRef.current);
         setErrorMessage("");
         try {
-          const response = await apiRequest<{
-            success: boolean;
-            apps: AppItem[];
-            schedule: { block_time: string } | null;
-          }>("/api/apps");
+          const [response, nativeStatus] = await Promise.all([
+            apiRequest<{
+              success: boolean;
+              apps: AppItem[];
+              schedule: { block_time: string } | null;
+            }>("/api/apps"),
+            isNativeAndroid() ? refreshNativeProtectionStatus() : Promise.resolve(null),
+          ]);
           setApps(response.apps);
+          if (nativeStatus) {
+            setNativeProtectionStatus(nativeStatus);
+          }
         if (response.schedule?.block_time) {
           const parsedWindow = parseBlockWindow(response.schedule.block_time);
           if (parsedWindow) {
@@ -555,9 +566,6 @@ function ControlPage() {
             setBlockEndHour(parsedWindow.endHour);
             setBlockEndMinute(parsedWindow.endMinute);
           }
-        }
-        if (isNativeAndroid()) {
-          await refreshNativeProtectionStatus();
         }
       } catch (error) {
         setErrorMessage(error instanceof Error ? error.message : "Unable to load app controls.");
@@ -575,46 +583,48 @@ function ControlPage() {
       return;
     }
 
-    try {
-      setSavingSchedule(true);
-      setErrorMessage("");
+    const nextBlockTime = `${formatTime24(blockHour, blockMinute)}-${formatTime24(blockEndHour, blockEndMinute)}`;
+    setSavingSchedule(false);
+    setErrorMessage("");
+    setScheduleSuccessMessage("Saved successfully.");
+
+    enqueueBackgroundSync("save-block-schedule", async () => {
       await apiRequest("/api/apps/schedule", {
         method: "POST",
         body: JSON.stringify({
-          blockTime: `${formatTime24(blockHour, blockMinute)}-${formatTime24(blockEndHour, blockEndMinute)}`,
+          blockTime: nextBlockTime,
           frequency: "daily",
           enabled: true,
         }),
       });
       if (isNativeAndroid()) {
-        try {
-          const status = await syncNativeProtectionConfig({
-            apps: apps.map((app) => ({
-              appName: app.app_name,
-              packageName: app.package_name || app.app_name,
-              isActive: app.is_active,
-            })),
-            blockTime: `${formatTime24(blockHour, blockMinute)}-${formatTime24(blockEndHour, blockEndMinute)}`,
-            blockHour,
-            blockMinute,
-            blockEndHour,
-            blockEndMinute,
-            enabled: true,
-            repeatType: "daily",
-          });
-          setNativeProtectionStatus(status);
-        } catch (error) {
-          if (!isNativePluginUnavailable(error)) {
-            throw error;
-          }
-        }
+        const status = await syncNativeProtectionConfig({
+          apps: apps.map((app) => ({
+            appName: app.app_name,
+            packageName: app.package_name || app.app_name,
+            isActive: app.is_active,
+          })),
+          blockTime: nextBlockTime,
+          blockHour,
+          blockMinute,
+          blockEndHour,
+          blockEndMinute,
+          enabled: true,
+          repeatType: "daily",
+        });
+        setNativeProtectionStatus(status);
       }
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Unable to save schedule.");
-    } finally {
-      setSavingSchedule(false);
-    }
+    });
   };
+
+  useEffect(() => {
+    if (!scheduleSuccessMessage) {
+      return undefined;
+    }
+
+    const timeout = window.setTimeout(() => setScheduleSuccessMessage(""), 2500);
+    return () => window.clearTimeout(timeout);
+  }, [scheduleSuccessMessage]);
 
   useEffect(() => {
     if (!hydrated || !isAuthenticated || !isNativeAndroid() || !hasLoadedRef.current) {
@@ -720,6 +730,19 @@ function ControlPage() {
   );
 
   const blockedApps = useMemo(() => appsToRender.filter((item) => item.isProtected), [appsToRender]);
+  const pickerRowHeight = 72;
+  const pickerViewportHeight = Math.round((typeof window !== "undefined" ? window.innerHeight : 720) * 0.52);
+  const virtualPicker = useMemo(() => {
+    const overscan = 6;
+    const start = Math.max(0, Math.floor(pickerScrollTop / pickerRowHeight) - overscan);
+    const visible = Math.ceil(pickerViewportHeight / pickerRowHeight) + overscan * 2;
+    const end = Math.min(pickerApps.length, start + visible);
+    return {
+      items: pickerApps.slice(start, end).map((item, index) => ({ item, virtualIndex: start + index })),
+      top: start * pickerRowHeight,
+      total: pickerApps.length * pickerRowHeight,
+    };
+  }, [pickerApps, pickerScrollTop, pickerViewportHeight]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !apps.length) {
@@ -894,9 +917,34 @@ function ControlPage() {
       return;
     }
 
-    try {
-      setSavingSelection(true);
-      setErrorMessage("");
+    const optimisticApps = [
+      ...apps.map((app) =>
+        selectedApps.some((selected) => (selected.packageName || selected.appName) === (app.package_name || app.app_name))
+          ? { ...app, is_active: true }
+          : app,
+      ),
+      ...selectedApps
+        .filter((selected) => !apps.some((app) => (selected.packageName || selected.appName) === (app.package_name || app.app_name)))
+        .map((selected, index): AppItem => ({
+          id: -Date.now() - index,
+          app_name: selected.appName,
+          package_name: selected.packageName,
+          app_icon: selected.appIcon as keyof typeof iconMap,
+          warning_message: selected.warningMessage,
+          is_active: true,
+        })),
+    ];
+
+    setSavingSelection(false);
+    setErrorMessage("");
+    setApps(optimisticApps);
+    setSavedNotifications((current) => [
+      `Saved ${selectedApps.length} app${selectedApps.length === 1 ? "" : "s"} to protection.`,
+      ...current,
+    ].slice(0, 3));
+    setPickerOpen(false);
+
+    enqueueBackgroundSync("save-selected-apps", async () => {
       const response = await apiRequest<{
         success: boolean;
         apps: AppItem[];
@@ -908,31 +956,19 @@ function ControlPage() {
         }),
       });
       setApps(response.apps);
-      setSavedNotifications((current) => [
-        `Saved ${selectedApps.length} app${selectedApps.length === 1 ? "" : "s"} to protection.`,
-        ...current,
-      ].slice(0, 3));
-      setPickerOpen(false);
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Unable to save selected apps.");
-    } finally {
-      setSavingSelection(false);
-    }
+    });
   };
 
   const toggleSelectedApp = async (app: AppItem) => {
     const nextIsActive = !app.is_active;
     setApps((current) => current.map((item) => (item.id === app.id ? { ...item, is_active: nextIsActive } : item)));
 
-    try {
+    enqueueBackgroundSync(`toggle-app-${app.id}`, async () => {
       await apiRequest("/api/apps/toggle", {
         method: "PUT",
         body: JSON.stringify({ id: app.id, isActive: nextIsActive }),
       });
-    } catch (error) {
-      setApps((current) => current.map((item) => (item.id === app.id ? { ...item, is_active: app.is_active } : item)));
-      setErrorMessage(error instanceof Error ? error.message : "Unable to update blocked app.");
-    }
+    });
   };
 
   return (
@@ -1045,7 +1081,9 @@ function ControlPage() {
                 {savingSchedule ? "Saving..." : "Save"}
               </motion.button>
             </div>
-            <div className="mt-2 text-[11px] text-muted-foreground">{savingSchedule ? "Saving schedule..." : "Schedule saves when you tap Save."}</div>
+            <div className={`mt-2 text-[11px] font-medium ${scheduleSuccessMessage ? "text-emerald-600" : "text-muted-foreground"}`}>
+              {scheduleSuccessMessage || (savingSchedule ? "Saving schedule..." : "Schedule saves when you tap Save.")}
+            </div>
           </div>
 
           <div className="rounded-2xl border border-foreground/10 bg-card p-4 shadow-sm">
@@ -1197,7 +1235,10 @@ function ControlPage() {
                     />
                   </div>
 
-                  <div className="max-h-[52vh] space-y-2 overflow-y-auto pr-1">
+                  <div
+                    className="max-h-[52vh] overflow-y-auto pr-1"
+                    onScroll={(event) => setPickerScrollTop(event.currentTarget.scrollTop)}
+                  >
                     {pickerLoading
                       ? Array.from({ length: 6 }).map((_, index) => (
                           <div key={index} className="animate-pulse rounded-2xl border border-foreground/10 bg-card px-4 py-4">
@@ -1211,7 +1252,10 @@ function ControlPage() {
                             </div>
                           </div>
                         ))
-                      : pickerApps.map((item, index) => {
+                      : (
+                        <div style={{ height: virtualPicker.total, position: "relative" }}>
+                          <div className="space-y-2" style={{ transform: `translateY(${virtualPicker.top}px)` }}>
+                            {virtualPicker.items.map(({ item, virtualIndex }) => {
                           const Icon = iconMap[item.appIcon] || ShieldAlert;
                           const key = item.packageName || item.appName;
                           const selected = draftSelectedPackages.includes(key);
@@ -1221,7 +1265,7 @@ function ControlPage() {
                               key={key}
                               initial={{ opacity: 0, y: 8 }}
                               animate={{ opacity: 1, y: 0 }}
-                              transition={{ delay: index * 0.02 }}
+                              transition={{ delay: Math.min(virtualIndex, 8) * 0.01 }}
                               onClick={() => toggleDraftSelection(item)}
                               className={`flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-all ${
                                 selected
@@ -1241,7 +1285,10 @@ function ControlPage() {
                               <div className={`h-5 w-5 rounded-full border ${selected ? "border-black bg-black" : "border-foreground/20 bg-white"}`} />
                             </motion.button>
                           );
-                        })}
+                            })}
+                          </div>
+                        </div>
+                      )}
 
                     {!pickerLoading && !pickerApps.length ? (
                       <div className="rounded-2xl border border-dashed border-foreground/10 bg-card px-4 py-8 text-center">

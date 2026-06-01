@@ -5,6 +5,7 @@ import axios, {
   type InternalAxiosRequestConfig,
 } from "axios";
 import { appStore } from "@/lib/app-store";
+import { perfLog } from "@/lib/performance";
 import { getStoredToken } from "@/lib/session";
 
 const DEFAULT_API_BASE_URL = "https://chaos-control-api.onrender.com";
@@ -48,6 +49,9 @@ interface ApiRequestOptions extends Omit<AxiosRequestConfig, "url" | "data" | "h
 
 type ApiInternalConfig = InternalAxiosRequestConfig & {
   skipAuth?: boolean;
+  metadata?: {
+    startedAt: number;
+  };
 };
 
 function getAuthToken() {
@@ -157,6 +161,7 @@ export const apiClient = axios.create({
 });
 
 apiClient.interceptors.request.use((config: ApiInternalConfig) => {
+  config.metadata = { startedAt: typeof performance !== "undefined" ? performance.now() : Date.now() };
   config.headers = AxiosHeaders.from(config.headers ?? {});
   const shouldAttachAuth = config.skipAuth !== true;
   const token = shouldAttachAuth ? getAuthToken() : null;
@@ -182,7 +187,21 @@ apiClient.interceptors.request.use((config: ApiInternalConfig) => {
 });
 
 apiClient.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    const config = response.config as ApiInternalConfig;
+    const startedAt = config.metadata?.startedAt;
+    if (startedAt) {
+      const durationMs = Math.round((typeof performance !== "undefined" ? performance.now() : Date.now()) - startedAt);
+      perfLog("api:response", {
+        method: (config.method ?? "get").toUpperCase(),
+        url: config.url,
+        status: response.status,
+        durationMs,
+        bytes: JSON.stringify(response.data ?? {}).length,
+      });
+    }
+    return response;
+  },
   (error: AxiosError<{ message?: string }>) => {
     const status = error.response?.status;
     const url = error.config?.url ?? "";
@@ -203,6 +222,16 @@ apiClient.interceptors.response.use(
       responseBody: error.response?.data,
       error,
     });
+    const config = error.config as ApiInternalConfig | undefined;
+    const startedAt = config?.metadata?.startedAt;
+    if (startedAt) {
+      perfLog("api:error", {
+        method,
+        url,
+        status,
+        durationMs: Math.round((typeof performance !== "undefined" ? performance.now() : Date.now()) - startedAt),
+      });
+    }
 
     if (status === 401 && shouldInvalidateSession(error.config as ApiInternalConfig | undefined)) {
       appStore.logout();

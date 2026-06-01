@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/lp/AppShell";
 import { GlassCard } from "@/components/lp/GlassCard";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Switch } from "@/components/ui/switch";
 import { apiClient, apiRequest } from "@/lib/api";
 import { appStore, useAppStore } from "@/lib/app-store";
 import { queryKeys } from "@/lib/query-keys";
@@ -103,6 +104,7 @@ const roadmapPath = `
 function Profile() {
   const queryClient = useQueryClient();
   const authUser = useAppStore((value) => value.auth.user);
+  const animatedBackgroundEnabled = useAppStore((value) => value.settings.animatedBackgroundEnabled);
   const [draftPrice, setDraftPrice] = useState(authUser?.cigarettePrice?.toString() || "20");
   const [draftAverage, setDraftAverage] = useState("10");
   const [errorMessage, setErrorMessage] = useState("");
@@ -356,6 +358,25 @@ function Profile() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <div className="mb-4">
+        <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">App Settings</div>
+      </div>
+      <GlassCard className="mb-6">
+        <div className="flex items-center justify-between gap-4">
+          <div className="min-w-0">
+            <div className="text-lg font-semibold text-foreground">Animated Background</div>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              Subtle smoke ambience behind every screen.
+            </p>
+          </div>
+          <Switch
+            checked={animatedBackgroundEnabled}
+            onCheckedChange={(checked) => appStore.updateSettings({ animatedBackgroundEnabled: checked })}
+            aria-label="Animated Background"
+          />
+        </div>
+      </GlassCard>
 
       <div className="mb-6 grid grid-cols-2 gap-3">
         {[

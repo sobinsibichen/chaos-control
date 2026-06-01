@@ -8,6 +8,7 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
+import android.os.SystemClock;
 import android.provider.Settings;
 import android.text.TextUtils;
 import android.util.Log;
@@ -21,17 +22,28 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.Calendar;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 
 public final class BlockingEngine {
     private static final String TAG = "BLOCKER";
     private static final long ACCESSIBILITY_HEARTBEAT_WINDOW_MS = 15_000L;
     private static final long MONITOR_HEARTBEAT_WINDOW_MS = 20_000L;
     private static final long FOREGROUND_STALE_WINDOW_MS = 5_000L;
+    private static final long SCHEDULE_CACHE_TTL_MS = 1_000L;
+    private static volatile String cachedBlockedAppsJson = "";
+    private static volatile Set<String> cachedActivePackages = new HashSet<>();
+    private static volatile Map<String, String> cachedPackageNames = new HashMap<>();
+    private static volatile CachedSchedule cachedSchedule;
 
     private BlockingEngine() {
     }
 
     public static boolean shouldBlockPackage(Context context, String packageName) {
+        long startedAt = SystemClock.elapsedRealtimeNanos();
+        boolean result = false;
         if (context == null || TextUtils.isEmpty(packageName)) {
             return false;
         }
@@ -41,32 +53,23 @@ public final class BlockingEngine {
             return false;
         }
 
-        BlockingScheduleEntity schedule = BlockingRepository.getSchedule(context);
-        if (!schedule.enabled || BlockingRepository.isUnlockedForToday(context)) {
+        CachedSchedule schedule = getCachedSchedule(context);
+        if (!schedule.enabled || schedule.unlockedForToday) {
             return false;
         }
 
-        if (!isWithinBlockedWindow(context)) {
+        if (!isWithinBlockedWindow(schedule)) {
             return false;
         }
 
-        try {
-            JSONArray apps = new JSONArray(schedule.blockedAppsJson == null ? "[]" : schedule.blockedAppsJson);
-            for (int index = 0; index < apps.length(); index += 1) {
-                JSONObject app = apps.optJSONObject(index);
-                if (app == null || !app.optBoolean("isActive", false)) {
-                    continue;
-                }
-
-                if (packageName.equals(app.optString("packageName"))) {
-                    return true;
-                }
-            }
-        } catch (JSONException error) {
-            Log.e(TAG, "Failed to parse blocked apps", error);
+        result = schedule.activePackages.contains(packageName);
+        long durationMicros = (SystemClock.elapsedRealtimeNanos() - startedAt) / 1000L;
+        if (durationMicros > 50_000L) {
+            Log.w(TAG, "perf should_block package=" + packageName + " result=" + result + " durationMicros=" + durationMicros);
+        } else {
+            Log.d(TAG, "perf should_block package=" + packageName + " result=" + result + " durationMicros=" + durationMicros);
         }
-
-        return false;
+        return result;
     }
 
     public static boolean isProtectionScheduleActive(Context context) {
@@ -74,8 +77,8 @@ public final class BlockingEngine {
             return false;
         }
 
-        BlockingScheduleEntity schedule = BlockingRepository.getSchedule(context);
-        return schedule.enabled && !TextUtils.isEmpty(schedule.blockedAppsJson) && hasActiveApps(schedule.blockedAppsJson);
+        CachedSchedule schedule = getCachedSchedule(context);
+        return schedule.enabled && !schedule.activePackages.isEmpty();
     }
 
     public static boolean isAccessibilityActive(Context context) {
@@ -249,16 +252,12 @@ public final class BlockingEngine {
         }
 
         try {
-            JSONArray apps = new JSONArray(BlockingRepository.getSchedule(context).blockedAppsJson == null ? "[]" : BlockingRepository.getSchedule(context).blockedAppsJson);
-            for (int index = 0; index < apps.length(); index += 1) {
-                JSONObject app = apps.optJSONObject(index);
-                if (app != null && packageName.equals(app.optString("packageName"))) {
-                    String appName = app.optString("appName", packageName);
-                    return TextUtils.isEmpty(appName) ? packageName : appName;
-                }
+            String cachedName = getCachedSchedule(context).packageNames.get(packageName);
+            if (!TextUtils.isEmpty(cachedName)) {
+                return cachedName;
             }
-        } catch (JSONException error) {
-            Log.e(TAG, "Failed to resolve app name", error);
+        } catch (Exception error) {
+            Log.e(TAG, "Failed to resolve cached app name", error);
         }
 
         try {
@@ -347,25 +346,12 @@ public final class BlockingEngine {
             return false;
         }
 
-        BlockingScheduleEntity schedule = BlockingRepository.getSchedule(context);
+        CachedSchedule schedule = getCachedSchedule(context);
         if (!schedule.enabled) {
             return false;
         }
 
-        Calendar now = Calendar.getInstance();
-        int currentMinutes = now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE);
-        int startMinutes = schedule.blockHour * 60 + schedule.blockMinute;
-        int endMinutes = BlockingRepository.getBlockEndHour(context) * 60 + BlockingRepository.getBlockEndMinute(context);
-
-        if (!hasCustomEndWindow(context)) {
-            return currentMinutes >= startMinutes;
-        }
-
-        if (startMinutes <= endMinutes) {
-            return currentMinutes >= startMinutes && currentMinutes < endMinutes;
-        }
-
-        return currentMinutes >= startMinutes || currentMinutes < endMinutes;
+        return isWithinBlockedWindow(schedule);
     }
 
     public static long getRemainingBlockMillis(Context context) {
@@ -373,17 +359,17 @@ public final class BlockingEngine {
             return 0L;
         }
 
-        BlockingScheduleEntity schedule = BlockingRepository.getSchedule(context);
+        CachedSchedule schedule = getCachedSchedule(context);
         Calendar now = Calendar.getInstance();
         int currentMinutes = now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE);
         int startMinutes = schedule.blockHour * 60 + schedule.blockMinute;
-        int endMinutes = BlockingRepository.getBlockEndHour(context) * 60 + BlockingRepository.getBlockEndMinute(context);
+        int endMinutes = schedule.blockEndHour * 60 + schedule.blockEndMinute;
 
-        if (!isWithinBlockedWindow(context)) {
+        if (!isWithinBlockedWindow(schedule)) {
             return Math.max(0L, nextStartTimeMillis(schedule.blockHour, schedule.blockMinute, currentMinutes) - System.currentTimeMillis());
         }
 
-        if (!hasCustomEndWindow(context)) {
+        if (!hasCustomEndWindow(schedule)) {
             Calendar midnight = Calendar.getInstance();
             midnight.add(Calendar.DAY_OF_YEAR, 1);
             midnight.set(Calendar.HOUR_OF_DAY, 0);
@@ -409,37 +395,150 @@ public final class BlockingEngine {
         return BlockingRepository.getBlockWindowLabel(context);
     }
 
-    private static boolean hasCustomEndWindow(Context context) {
-        return BlockingRepository.getBlockEndHour(context) != BlockingRepository.getBlockHour(context)
-            || BlockingRepository.getBlockEndMinute(context) != BlockingRepository.getBlockMinute(context);
+    private static boolean hasCustomEndWindow(CachedSchedule schedule) {
+        return schedule.blockEndHour != schedule.blockHour || schedule.blockEndMinute != schedule.blockMinute;
     }
 
     private static boolean hasActiveApps(String rawApps) {
-        try {
-            JSONArray apps = new JSONArray(rawApps == null ? "[]" : rawApps);
-            for (int index = 0; index < apps.length(); index += 1) {
-                JSONObject app = apps.optJSONObject(index);
-                if (app != null && app.optBoolean("isActive", false)) {
-                    return true;
-                }
-            }
-        } catch (JSONException error) {
-            Log.e(TAG, "Failed to parse blocked apps", error);
+        return !getActiveBlockedPackages(rawApps).isEmpty();
+    }
+
+    private static CachedSchedule getCachedSchedule(Context context) {
+        long now = System.currentTimeMillis();
+        CachedSchedule current = cachedSchedule;
+        if (current != null && now - current.loadedAt < SCHEDULE_CACHE_TTL_MS) {
+            return current;
         }
-        return false;
+
+        synchronized (BlockingEngine.class) {
+            current = cachedSchedule;
+            if (current != null && now - current.loadedAt < SCHEDULE_CACHE_TTL_MS) {
+                return current;
+            }
+
+            BlockingScheduleEntity schedule = BlockingRepository.getSchedule(context);
+            String rawApps = schedule.blockedAppsJson == null ? "[]" : schedule.blockedAppsJson;
+            Set<String> packages = getActiveBlockedPackages(rawApps);
+            Map<String, String> names = cachedPackageNames;
+            cachedSchedule = new CachedSchedule(
+                now,
+                schedule.enabled,
+                BlockingRepository.isUnlockedForToday(context),
+                schedule.blockHour,
+                schedule.blockMinute,
+                BlockingRepository.getBlockEndHour(context),
+                BlockingRepository.getBlockEndMinute(context),
+                rawApps,
+                packages,
+                names
+            );
+            return cachedSchedule;
+        }
+    }
+
+    private static boolean isWithinBlockedWindow(CachedSchedule schedule) {
+        Calendar now = Calendar.getInstance();
+        int currentMinutes = now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE);
+        int startMinutes = schedule.blockHour * 60 + schedule.blockMinute;
+        int endMinutes = schedule.blockEndHour * 60 + schedule.blockEndMinute;
+
+        if (!hasCustomEndWindow(schedule)) {
+            return currentMinutes >= startMinutes;
+        }
+
+        if (startMinutes <= endMinutes) {
+            return currentMinutes >= startMinutes && currentMinutes < endMinutes;
+        }
+
+        return currentMinutes >= startMinutes || currentMinutes < endMinutes;
+    }
+
+    private static Set<String> getActiveBlockedPackages(String rawApps) {
+        String safeRawApps = rawApps == null ? "[]" : rawApps;
+        if (safeRawApps.equals(cachedBlockedAppsJson)) {
+            return cachedActivePackages;
+        }
+
+        synchronized (BlockingEngine.class) {
+            if (safeRawApps.equals(cachedBlockedAppsJson)) {
+                return cachedActivePackages;
+            }
+
+            Set<String> activePackages = new HashSet<>();
+            Map<String, String> packageNames = new HashMap<>();
+            try {
+                JSONArray apps = new JSONArray(safeRawApps);
+                for (int index = 0; index < apps.length(); index += 1) {
+                    JSONObject app = apps.optJSONObject(index);
+                    if (app == null || !app.optBoolean("isActive", false)) {
+                        continue;
+                    }
+
+                    String packageName = app.optString("packageName");
+                    if (!TextUtils.isEmpty(packageName)) {
+                        activePackages.add(packageName);
+                        packageNames.put(packageName, app.optString("appName", packageName));
+                    }
+                }
+            } catch (JSONException error) {
+                Log.e(TAG, "Failed to parse blocked apps", error);
+            }
+
+            cachedBlockedAppsJson = safeRawApps;
+            cachedActivePackages = activePackages;
+            cachedPackageNames = packageNames;
+            return cachedActivePackages;
+        }
     }
 
     private static long nextTransitionTime(Context context) {
-        BlockingScheduleEntity schedule = BlockingRepository.getSchedule(context);
+        CachedSchedule schedule = getCachedSchedule(context);
         Calendar now = Calendar.getInstance();
         int currentMinutes = now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE);
 
-        if (isWithinBlockedWindow(context) && hasCustomEndWindow(context)) {
-            int endMinutes = BlockingRepository.getBlockEndHour(context) * 60 + BlockingRepository.getBlockEndMinute(context);
+        if (isWithinBlockedWindow(schedule) && hasCustomEndWindow(schedule)) {
+            int endMinutes = schedule.blockEndHour * 60 + schedule.blockEndMinute;
             return nextEndTimeMillis(schedule.blockHour, schedule.blockMinute, endMinutes);
         }
 
         return nextStartTimeMillis(schedule.blockHour, schedule.blockMinute, currentMinutes);
+    }
+
+    private static final class CachedSchedule {
+        final long loadedAt;
+        final boolean enabled;
+        final boolean unlockedForToday;
+        final int blockHour;
+        final int blockMinute;
+        final int blockEndHour;
+        final int blockEndMinute;
+        final String blockedAppsJson;
+        final Set<String> activePackages;
+        final Map<String, String> packageNames;
+
+        CachedSchedule(
+            long loadedAt,
+            boolean enabled,
+            boolean unlockedForToday,
+            int blockHour,
+            int blockMinute,
+            int blockEndHour,
+            int blockEndMinute,
+            String blockedAppsJson,
+            Set<String> activePackages,
+            Map<String, String> packageNames
+        ) {
+            this.loadedAt = loadedAt;
+            this.enabled = enabled;
+            this.unlockedForToday = unlockedForToday;
+            this.blockHour = blockHour;
+            this.blockMinute = blockMinute;
+            this.blockEndHour = blockEndHour;
+            this.blockEndMinute = blockEndMinute;
+            this.blockedAppsJson = blockedAppsJson;
+            this.activePackages = activePackages;
+            this.packageNames = packageNames;
+        }
     }
 
     private static long nextStartTimeMillis(int hour, int minute, int currentMinutes) {

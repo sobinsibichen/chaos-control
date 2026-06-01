@@ -40,6 +40,7 @@ export interface AppState {
     cigarettePrice: number;
     currencySymbol: string;
     visibleOnRadar: boolean;
+    animatedBackgroundEnabled: boolean;
   };
   stats: {
     cigarettesToday: number;
@@ -81,6 +82,7 @@ const defaultState: AppState = {
     cigarettePrice: 20,
     currencySymbol: "₹",
     visibleOnRadar: false,
+    animatedBackgroundEnabled: true,
   },
   stats: {
     cigarettesToday: 7,
@@ -161,6 +163,7 @@ function persist(nextState: AppState) {
     JSON.stringify({
       social: nextState.social,
       damage: nextState.damage,
+      settings: nextState.settings,
     }),
   );
 }

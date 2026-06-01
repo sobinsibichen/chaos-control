@@ -1,5 +1,4 @@
 import { Link, useLocation } from "@tanstack/react-router";
-import { motion } from "framer-motion";
 import { BarChart3, House, ShieldAlert, Store, User } from "lucide-react";
 
 const tabs = [
@@ -19,17 +18,13 @@ export function BottomNav() {
           const active = pathname === t.to || (t.to === "/home" && pathname === "/");
           const Icon = t.icon;
           return (
-              <Link
+            <Link
               key={t.to}
               to={t.to}
-              className="relative flex-1 rounded-full px-1 py-1.5 transition-all"
+              className="relative flex-1 rounded-full px-1 py-1.5 transition-colors"
             >
               {active && (
-                <motion.div
-                  layoutId="nav-active"
-                  className="absolute inset-0 rounded-full bg-foreground/5 border border-foreground/10"
-                  transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                />
+                <div className="absolute inset-0 rounded-full border border-foreground/10 bg-foreground/5" />
               )}
               <div className="relative flex flex-col items-center gap-1.5">
                 <Icon

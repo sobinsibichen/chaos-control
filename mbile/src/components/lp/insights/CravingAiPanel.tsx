@@ -33,7 +33,8 @@ export function CravingAiPanel({
     ? Math.max(0, Math.min(100, data.liveCraving?.intensityScore ?? Math.min(100, (data.dashboard?.dailyStatus.regretLevel ?? 0) + 18)))
     : 0;
   const dangerousLabel = dangerousWindow.label || "22:00";
-  const triggerPrimary = data.liveCraving?.triggerPrediction.primary ?? "Routine loop";
+  const triggerPrimary = data.liveCraving?.triggerPrediction?.primary ?? "Routine loop";
+  const generatedAt = data.liveCraving?.createdAt ? new Date(data.liveCraving.createdAt).toLocaleString("en-IN") : "Live";
 
   return (
     <div className="space-y-4">
@@ -41,10 +42,11 @@ export function CravingAiPanel({
         <div className="flex items-start justify-between gap-3">
           <div>
             <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Prediction engine</div>
-            <div className="mt-2 text-2xl font-semibold text-foreground">High craving probability</div>
+            <div className="mt-2 text-2xl font-semibold text-foreground">Live craving forecast</div>
             <p className="mt-2 text-sm text-muted-foreground">
               {data.liveCraving?.insightText ?? `Danger window detected around ${dangerousLabel}. Probability elevated for the next 30 minutes.`}
             </p>
+            <div className="mt-2 text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Generated {generatedAt}</div>
           </div>
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-red-50">
             <RadarIcon className="h-5 w-5 animate-danger-pulse text-red-500" />

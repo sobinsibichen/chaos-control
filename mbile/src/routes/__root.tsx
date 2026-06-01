@@ -11,7 +11,9 @@ import { useEffect } from "react";
 import { Toaster } from "react-hot-toast";
 
 import appCss from "../styles.css?url";
+import { AnimatedBackground } from "@/components/lp/AnimatedBackground";
 import { bootstrapAuth } from "@/lib/auth";
+import { perfLog, sampleMemory, useRenderCounter } from "@/lib/performance";
 import { RealtimeProvider } from "@/lib/realtime";
 
 function NotFoundComponent() {
@@ -125,16 +127,29 @@ function RootShell({ children }: { children: React.ReactNode }) {
 }
 
 function RootComponent() {
+  useRenderCounter("RootComponent");
   const { queryClient } = Route.useRouteContext();
 
   useEffect(() => {
-    void bootstrapAuth();
+    const startedAt = performance.now();
+    perfLog("app:bootstrap:start", {
+      navigationType: performance.getEntriesByType("navigation")[0]
+        ? (performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming).type
+        : "unknown",
+    });
+    void bootstrapAuth().finally(() => {
+      perfLog("app:bootstrap:done", { durationMs: Math.round(performance.now() - startedAt) });
+      sampleMemory("app-bootstrap");
+    });
   }, []);
 
   return (
     <QueryClientProvider client={queryClient}>
       <RealtimeProvider>
-        <Outlet />
+        <AnimatedBackground />
+        <div className="relative z-10">
+          <Outlet />
+        </div>
       </RealtimeProvider>
     </QueryClientProvider>
   );

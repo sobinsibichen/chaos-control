@@ -40,13 +40,19 @@ type CravingPredictionRow = {
 };
 
 function mapPrediction(row: CravingPredictionRow): CravingPredictionRecord {
+  const triggerPrediction = row.trigger_prediction ?? {
+    primary: "Routine loop",
+    mood: "neutral",
+    timeBias: new Date(row.created_at ?? Date.now()).getHours(),
+  };
+
   return {
     id: row.id,
     predictionWindow: row.prediction_window,
     cravingProbability: row.craving_probability,
     intensityScore: row.intensity_score,
     dangerousHours: row.dangerous_hours ?? [],
-    triggerPrediction: row.trigger_prediction,
+    triggerPrediction,
     insightText: row.insight_text,
     generatedFrom: row.generated_from ?? {},
     createdAt: row.created_at,
@@ -63,13 +69,19 @@ export async function listCravingPredictions(limit = 12) {
 
 export async function fetchLiveCravingPrediction() {
   const response = await apiRequest<ApiResponse<Omit<CravingPredictionRow, "id" | "created_at">>>("/api/craving-predictions/live");
+  const triggerPrediction = response.data.trigger_prediction ?? {
+    primary: "Routine loop",
+    mood: "neutral",
+    timeBias: new Date().getHours(),
+  };
+
   return {
     id: 0,
     predictionWindow: response.data.prediction_window,
     cravingProbability: response.data.craving_probability,
     intensityScore: response.data.intensity_score,
     dangerousHours: response.data.dangerous_hours ?? [],
-    triggerPrediction: response.data.trigger_prediction,
+    triggerPrediction,
     insightText: response.data.insight_text,
     generatedFrom: response.data.generated_from ?? {},
     createdAt: new Date().toISOString(),

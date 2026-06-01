@@ -63,7 +63,7 @@ function LoginPage() {
   };
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-background px-5 py-6 text-foreground">
+    <div className="relative min-h-screen overflow-hidden bg-transparent px-5 py-6 text-foreground">
       <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.55 }} className="relative mx-auto flex min-h-screen max-w-md flex-col justify-center">
         <div className="mb-10 text-center">
           <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-[1.6rem] border border-foreground/10 bg-card shadow-[0_18px_40px_rgba(15,23,42,0.06)]">

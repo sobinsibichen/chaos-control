@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { AppShell } from "@/components/lp/AppShell";
 import { RoastContent } from "@/components/lp/insights/RoastContent";
+import { useRenderCounter, useScreenPerformance } from "@/lib/performance";
 
 export const Route = createFileRoute("/roast")({
   head: () => ({ meta: [{ title: "Roast Analytics - Last Puff" }] }),
@@ -8,6 +9,8 @@ export const Route = createFileRoute("/roast")({
 });
 
 function RoastPage() {
+  useRenderCounter("RoastPage");
+  useScreenPerformance("roast", true);
   return (
     <AppShell>
       <div className="mb-6">

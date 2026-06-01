@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "framer-motion";
 import { Award, Brain, Cigarette, Flame, Mic, Radar, Search, ShieldCheck, Sparkles, TimerReset, TrendingDown, Trophy, Wind, Zap } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AIOrb } from "@/components/lp/AIOrb";
 import { AppShell } from "@/components/lp/AppShell";
@@ -12,7 +12,9 @@ import { SmokeParticles } from "@/components/lp/Smoke";
 import { StatTile } from "@/components/lp/StatTile";
 import { apiRequest } from "@/lib/api";
 import { appStore, useAppStore } from "@/lib/app-store";
+import { readLocalQueryCache, writeLocalQueryCache } from "@/lib/local-query-cache";
 import { queryKeys } from "@/lib/query-keys";
+import { sampleMemory, useRenderCounter, useScreenPerformance } from "@/lib/performance";
 import { formatSmokeFree, useSmokeFreeTicker } from "@/lib/time";
 import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 
@@ -63,6 +65,7 @@ interface DashboardPayload {
     longestSmokeFreeSeconds: number;
   };
   notifications: Array<{ type: string; title: string; description: string; level?: number }>;
+  activity?: ActivityRow[];
 }
 
 type DashboardResponse = { success: boolean } & DashboardPayload;
@@ -76,6 +79,9 @@ interface ActivityRow {
 }
 
 const ACTIVITY_CACHE_KEY = "last-puff-recent-activity";
+const DASHBOARD_CACHE_KEY = "last-puff-dashboard-cache";
+const DASHBOARD_CACHE_MAX_AGE_MS = 5 * 60 * 1000;
+const ACTIVITY_CACHE_MAX_AGE_MS = 5 * 60 * 1000;
 
 const activityIconMap = {
   cigarette_logged: Cigarette,
@@ -125,6 +131,7 @@ function ViewportPortal({ children }: { children: React.ReactNode }) {
 }
 
 export function DashboardPage() {
+  useRenderCounter("DashboardPage");
   const queryClient = useQueryClient();
   const user = useAppStore((value) => value.auth.user);
   const hydrated = useAppStore((value) => value.meta.hydrated);
@@ -137,20 +144,61 @@ export function DashboardPage() {
   const [cachedActivity, setCachedActivity] = useState<ActivityRow[]>([]);
   const previousLevelRef = useRef<number | null>(null);
   useBodyScrollLock(quitStep > 0 || Boolean(popup));
-
+  const cachedDashboardQuery = useMemo(
+    () => readLocalQueryCache<DashboardResponse>(DASHBOARD_CACHE_KEY, DASHBOARD_CACHE_MAX_AGE_MS),
+    [],
+  );
   const dashboardQuery = useQuery({
     queryKey: queryKeys.dashboard,
     queryFn: () => apiRequest<DashboardResponse>("/api/stats/dashboard"),
     enabled: hydrated && isAuthenticated,
     refetchInterval: 60000,
+    staleTime: 0,
+    initialData: cachedDashboardQuery?.data,
+    initialDataUpdatedAt: cachedDashboardQuery?.updatedAt,
   });
 
-  const activityQuery = useQuery({
-    queryKey: queryKeys.activity,
-    queryFn: () => apiRequest<{ success: boolean; activity: ActivityRow[] }>("/api/activity/recent?limit=5"),
-    enabled: hydrated && isAuthenticated,
-    refetchInterval: 60000,
-  });
+  useEffect(() => {
+    if (dashboardQuery.data) {
+      writeLocalQueryCache(DASHBOARD_CACHE_KEY, dashboardQuery.data);
+      if (dashboardQuery.data.activity?.length && typeof window !== "undefined") {
+        const latest = dashboardQuery.data.activity.slice(0, 5);
+        setCachedActivity(latest);
+        queryClient.setQueryData(queryKeys.activity, { success: true, activity: latest });
+        window.localStorage.setItem(ACTIVITY_CACHE_KEY, JSON.stringify(latest));
+      }
+    }
+  }, [dashboardQuery.data, queryClient]);
+
+  useEffect(() => {
+    if (!dashboardQuery.data || !hydrated || !isAuthenticated || typeof window === "undefined") {
+      return undefined;
+    }
+
+    const prefetch = () => {
+      void Promise.all([import("./insights"), import("./roast"), import("./control"), import("./profile")]);
+      void queryClient.prefetchQuery({
+        queryKey: queryKeys.analytics,
+        queryFn: () => apiRequest("/api/analytics/roast"),
+        staleTime: 5 * 60_000,
+      });
+      void queryClient.prefetchQuery({
+        queryKey: queryKeys.apps,
+        queryFn: () => apiRequest("/api/apps"),
+        staleTime: 5 * 60_000,
+      });
+      void queryClient.prefetchQuery({
+        queryKey: queryKeys.profile,
+        queryFn: () => apiRequest("/api/profile"),
+        staleTime: 5 * 60_000,
+      });
+    };
+
+    const schedule = window.requestIdleCallback ?? ((callback: IdleRequestCallback) => window.setTimeout(callback, 200));
+    const cancel = window.cancelIdleCallback ?? window.clearTimeout;
+    const id = schedule(prefetch);
+    return () => cancel(id as number);
+  }, [dashboardQuery.data, hydrated, isAuthenticated, queryClient]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -167,18 +215,15 @@ export function DashboardPage() {
     }
   }, []);
 
-  useEffect(() => {
-    const activity = activityQuery.data?.activity;
-    if (!activity?.length || typeof window === "undefined") {
-      return;
-    }
-    const latest = activity.slice(0, 5);
-    setCachedActivity(latest);
-    window.localStorage.setItem(ACTIVITY_CACHE_KEY, JSON.stringify(latest));
-  }, [activityQuery.data?.activity]);
-
   const dashboard = dashboardQuery.data;
+  useScreenPerformance("dashboard", Boolean(dashboard));
   const smokeFreeSeconds = useSmokeFreeTicker(dashboard?.smokeFree.startedAt ?? null);
+
+  useEffect(() => {
+    if (dashboard) {
+      sampleMemory("dashboard-ready");
+    }
+  }, [dashboard]);
 
   useEffect(() => {
     if (!dashboard) {
@@ -333,7 +378,7 @@ export function DashboardPage() {
         ? "Every cigarette logged is a real datapoint. Recovery starts with honesty."
         : "Quiet day. Keep the streak gentle and alive.";
 
-  const activity = (activityQuery.data?.activity?.length ? activityQuery.data.activity : cachedActivity).slice(0, 5);
+  const activity = (dashboard?.activity?.length ? dashboard.activity : cachedActivity).slice(0, 5);
 
   return (
     <AppShell>
@@ -409,7 +454,7 @@ export function DashboardPage() {
           disabled={recordMutation.isPending}
           className="relative w-full overflow-hidden rounded-2xl bg-primary px-5 py-3 text-sm font-semibold tracking-wide text-primary-foreground shadow-[0_16px_34px_rgba(15,23,42,0.16)] transition-all hover:bg-primary/90"
         >
-          <span className="relative">{recordMutation.isPending ? "Recording..." : "Record Cigarette"}</span>
+          <span className="relative">{recordMutation.isPending ? "Saved locally..." : "Record Cigarette"}</span>
         </motion.button>
 
         <motion.button

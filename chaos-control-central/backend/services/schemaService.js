@@ -314,6 +314,14 @@ async function ensureSchema() {
       )
     `);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_smoke_dna_user_created ON public.smoke_dna (user_id, created_at DESC)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_cigarette_logs_user_logged ON public.cigarette_logs (user_id, logged_at DESC)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_quit_attempts_user_active_start ON public.quit_attempts (user_id, active, start_date DESC)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_quit_attempts_user_duration ON public.quit_attempts (user_id, smoke_free_seconds, duration_hours)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_blocked_activity_logs_user_blocked ON public.blocked_activity_logs (user_id, blocked_at DESC)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_blocked_apps_user_package ON public.blocked_apps (user_id, package_name)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_block_schedules_user_created ON public.block_schedules (user_id, created_at DESC)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_activity_feed_user_created ON public.activity_feed (user_id, created_at DESC)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_user_achievements_user_achievement ON public.user_achievements (user_id, achievement_id)`);
     await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_levels_number ON public.levels (level_number)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_smoke_replay_user_period ON public.smoke_replay (user_id, replay_period, period_start DESC)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_craving_predictions_user_created ON public.craving_predictions (user_id, created_at DESC)`);
@@ -325,6 +333,25 @@ async function ensureSchema() {
     await client.query(`CREATE INDEX IF NOT EXISTS idx_user_milestones_user_key ON public.user_milestones (user_id, milestone_key)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_user_rewards_user_key ON public.user_rewards (user_id, reward_key)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_completion_certificates_user_created ON public.completion_certificates (user_id, created_at DESC)`);
+    await client.query(`
+      ALTER TABLE public.user_stats
+        ADD COLUMN IF NOT EXISTS weekly_savings NUMERIC DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS weekly_cigarettes INTEGER DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS weekly_avoided INTEGER DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS cigarettes_over_baseline_today INTEGER DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS cigarettes_over_baseline_weekly INTEGER DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS cigarettes_over_baseline_total INTEGER DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS xp_points INTEGER DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS level_progress_percent INTEGER DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS longest_smoke_free_seconds BIGINT DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS monthly_cigarettes_json JSONB DEFAULT '[]'::jsonb,
+        ADD COLUMN IF NOT EXISTS daily_cigarettes_json JSONB DEFAULT '[]'::jsonb,
+        ADD COLUMN IF NOT EXISTS trends_json JSONB DEFAULT '{}'::jsonb,
+        ADD COLUMN IF NOT EXISTS roast_worst_day JSONB DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS health_score INTEGER DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS roast_score INTEGER DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS analytics_precomputed_at TIMESTAMPTZ
+    `);
     await normalizePremiumFeatureSchema(client);
     await ensureAchievementDefinitions(client);
     await ensureLevelDefinitions(client);

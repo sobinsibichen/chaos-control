@@ -1,11 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { BanknoteArrowDown, Flame, IndianRupee, ShieldBan, Skull, WalletCards, Wind } from "lucide-react";
+import { useEffect, useMemo } from "react";
 import { AnimatedNumber } from "@/components/lp/AnimatedNumber";
 import { GlassCard } from "@/components/lp/GlassCard";
 import { TopRegretCard } from "@/components/lp/analytics/TopRegretCard";
 import { apiRequest } from "@/lib/api";
 import { useAppStore } from "@/lib/app-store";
+import { readLocalQueryCache, writeLocalQueryCache } from "@/lib/local-query-cache";
 import { queryKeys } from "@/lib/query-keys";
 
 interface AnalyticsPayload {
@@ -28,15 +30,34 @@ interface AnalyticsPayload {
   cigarettesAvoidedTotal: number;
 }
 
+const ROAST_ANALYTICS_CACHE_KEY = "last-puff-roast-analytics-cache";
+const ROAST_HIGHLIGHTS_CACHE_KEY = "last-puff-roast-highlights-cache";
+const ROAST_CACHE_MAX_AGE_MS = 30 * 60 * 1000;
+
 export function RoastContent() {
   const hydrated = useAppStore((state) => state.meta.hydrated);
   const isAuthenticated = useAppStore((state) => state.auth.isAuthenticated);
   const queriesEnabled = hydrated && isAuthenticated;
+  const cachedAnalytics = useMemo(
+    () => readLocalQueryCache<{ success: boolean; analytics: AnalyticsPayload }>(ROAST_ANALYTICS_CACHE_KEY, ROAST_CACHE_MAX_AGE_MS),
+    [],
+  );
+  const cachedHighlights = useMemo(
+    () =>
+      readLocalQueryCache<{ success: boolean; highlights: AnalyticsPayload & { blockedLogs: Array<{ id: number; app_name: string; message: string | null }> } }>(
+        ROAST_HIGHLIGHTS_CACHE_KEY,
+        ROAST_CACHE_MAX_AGE_MS,
+      ),
+    [],
+  );
 
   const analyticsQuery = useQuery({
     queryKey: queryKeys.analytics,
     queryFn: () => apiRequest<{ success: boolean; analytics: AnalyticsPayload }>("/api/analytics/roast"),
     enabled: queriesEnabled,
+    staleTime: 0,
+    initialData: cachedAnalytics?.data,
+    initialDataUpdatedAt: cachedAnalytics?.updatedAt,
   });
 
   const highlightsQuery = useQuery({
@@ -44,7 +65,22 @@ export function RoastContent() {
     queryFn: () =>
       apiRequest<{ success: boolean; highlights: AnalyticsPayload & { blockedLogs: Array<{ id: number; app_name: string; message: string | null }> } }>("/api/analytics/highlights"),
     enabled: queriesEnabled,
+    staleTime: 0,
+    initialData: cachedHighlights?.data,
+    initialDataUpdatedAt: cachedHighlights?.updatedAt,
   });
+
+  useEffect(() => {
+    if (analyticsQuery.data) {
+      writeLocalQueryCache(ROAST_ANALYTICS_CACHE_KEY, analyticsQuery.data);
+    }
+  }, [analyticsQuery.data]);
+
+  useEffect(() => {
+    if (highlightsQuery.data) {
+      writeLocalQueryCache(ROAST_HIGHLIGHTS_CACHE_KEY, highlightsQuery.data);
+    }
+  }, [highlightsQuery.data]);
 
   const analytics = analyticsQuery.data?.analytics;
   const highlights = highlightsQuery.data?.highlights;

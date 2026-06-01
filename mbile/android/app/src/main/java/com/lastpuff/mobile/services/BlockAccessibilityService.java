@@ -1,6 +1,7 @@
 package com.lastpuff.mobile.services;
 
 import android.accessibilityservice.AccessibilityService;
+import android.os.SystemClock;
 import android.util.Log;
 import android.view.accessibility.AccessibilityEvent;
 
@@ -15,6 +16,7 @@ public class BlockAccessibilityService extends AccessibilityService {
 
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
+        long startedAt = SystemClock.elapsedRealtimeNanos();
         if (event == null || event.getPackageName() == null) {
             return;
         }
@@ -40,12 +42,20 @@ public class BlockAccessibilityService extends AccessibilityService {
             return;
         }
 
-        if (BlockingEngine.shouldBlockPackage(this, packageName)) {
+        boolean shouldBlock = BlockingEngine.shouldBlockPackage(this, packageName);
+        if (shouldBlock) {
             lastBlockedPackage = packageName;
             lastBlockedAt = now;
+            BlockingEngine.launchBlockScreen(this, packageName, "accessibility");
+        } else if (BlockingRepository.isOverlayVisible(this)) {
+            com.lastpuff.mobile.BlockOverlayManager.getInstance(this).refreshOverlay();
         }
-
-        BlockingEngine.maybeBlockForegroundPackage(this, packageName, "accessibility");
+        long durationMicros = (SystemClock.elapsedRealtimeNanos() - startedAt) / 1000L;
+        if (durationMicros > 50_000L) {
+            Log.w(TAG, "perf accessibility_event package=" + packageName + " durationMicros=" + durationMicros + " eventType=" + event.getEventType());
+        } else {
+            Log.d(TAG, "perf accessibility_event package=" + packageName + " durationMicros=" + durationMicros + " eventType=" + event.getEventType());
+        }
     }
 
     @Override

@@ -3,7 +3,9 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const http = require("http");
+const zlib = require("zlib");
 const pool = require("./config/db");
+const { getDbTrace, withDbTrace } = require("./config/db");
 const authRoutes = require("./routes/authRoutes");
 const statsRoutes = require("./routes/statsRoutes");
 const cigaretteRoutes = require("./routes/cigaretteRoutes");
@@ -35,6 +37,61 @@ app.use(
     credentials: true,
   }),
 );
+app.use((req, res, next) => {
+  withDbTrace(() => next());
+});
+app.use((req, res, next) => {
+  const startedAt = process.hrtime.bigint();
+  res.on("finish", () => {
+    const durationMs = Math.round(Number(process.hrtime.bigint() - startedAt) / 1e6);
+    const bytes = Number(res.getHeader("Content-Length") || 0);
+    const level = durationMs > Number(process.env.API_SLOW_RESPONSE_MS || 250) ? "warn" : "info";
+    const dbTrace = getDbTrace();
+    console[level]("[perf:api]", JSON.stringify({
+      method: req.method,
+      path: req.originalUrl,
+      status: res.statusCode,
+      durationMs,
+      bytes,
+      dbQueryCount: dbTrace?.queryCount || 0,
+      dbDurationMs: dbTrace?.totalDurationMs || 0,
+      duplicateDbQueries: dbTrace?.duplicates || [],
+      slow: durationMs > Number(process.env.API_SLOW_RESPONSE_MS || 250),
+    }));
+  });
+  next();
+});
+app.use((req, res, next) => {
+  const send = res.send.bind(res);
+  res.send = (body) => {
+    const acceptEncoding = req.headers["accept-encoding"] || "";
+    const payload = Buffer.isBuffer(body) ? body : Buffer.from(String(body ?? ""), "utf8");
+
+    if (
+      req.method === "HEAD" ||
+      res.getHeader("Content-Encoding") ||
+      payload.length < 1024 ||
+      !/application\/json|text\//i.test(String(res.getHeader("Content-Type") || "application/json"))
+    ) {
+      return send(body);
+    }
+
+    if (/\bbr\b/.test(acceptEncoding)) {
+      res.setHeader("Content-Encoding", "br");
+      res.setHeader("Vary", "Accept-Encoding");
+      return send(zlib.brotliCompressSync(payload));
+    }
+
+    if (/\bgzip\b/.test(acceptEncoding)) {
+      res.setHeader("Content-Encoding", "gzip");
+      res.setHeader("Vary", "Accept-Encoding");
+      return send(zlib.gzipSync(payload));
+    }
+
+    return send(body);
+  };
+  next();
+});
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -106,9 +163,6 @@ app.use((error, req, res, next) => {
 const startServer = async () => {
   try {
     getRequiredEnv("JWT_SECRET");
-    await ensureSchema();
-    await pool.query("SELECT 1");
-
     initializeRealtime(server);
 
     server.once("error", (error) => {
@@ -125,6 +179,20 @@ const startServer = async () => {
     server.listen(port, () => {
       console.log(`Server running on port ${port}`);
       console.log(`Health check available at /api/health`);
+      const backgroundInitDelayMs = Number(process.env.BACKGROUND_INIT_DELAY_MS || 5000);
+      setTimeout(async () => {
+        const startedAt = process.hrtime.bigint();
+        try {
+          await ensureSchema();
+          await pool.query("SELECT 1");
+          console.info("[perf:startup:background]", {
+            durationMs: Math.round(Number(process.hrtime.bigint() - startedAt) / 1e6),
+            status: "ready",
+          });
+        } catch (error) {
+          console.error("Background initialization failed:", error.message);
+        }
+      }, backgroundInitDelayMs).unref?.();
     });
   } catch (error) {
     console.error("Unable to start server:", error.message);

@@ -3,7 +3,7 @@ import type { SmokeDnaRecord } from "@/lib/intelligenceApi";
 import type { CravingPredictionRecord } from "@/lib/cravingApi";
 import type { SmokeReplayRecord } from "@/lib/replayApi";
 
-export type InsightsTab = "Roast" | "Smoke DNA" | "Smoke Replay" | "Craving AI" | "Voice";
+export type InsightsTab = "Roast" | "Smoke DNA" | "Craving AI" | "Voice";
 
 export interface InsightsSharedData {
   dashboard: DashboardPayload | undefined;

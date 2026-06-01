@@ -8,11 +8,15 @@ import type { InsightsTab } from "./InsightsState";
 
 const RoastTab = lazy(async () => ({ default: (await import("./RoastContent")).RoastContent }));
 const SmokeDnaTab = lazy(async () => ({ default: (await import("./SmokeDnaPanel")).SmokeDnaPanel }));
-const SmokeReplayTab = lazy(async () => ({ default: (await import("./SmokeReplayPanel")).SmokeReplayPanel }));
 const CravingAiTab = lazy(async () => ({ default: (await import("./CravingAiPanel")).CravingAiPanel }));
 const VoiceTab = lazy(async () => ({ default: (await import("./VoicePanel")).VoicePanel }));
 
-const tabs: InsightsTab[] = ["Roast", "Smoke DNA", "Smoke Replay", "Craving AI", "Voice"];
+const tabs: Array<{ key: InsightsTab; label: string }> = [
+  { key: "Roast", label: "Overview" },
+  { key: "Smoke DNA", label: "Pattern" },
+  { key: "Craving AI", label: "Prediction" },
+  { key: "Voice", label: "Assistant" },
+];
 
 class InsightsTabErrorBoundary extends Component<{ tabName: InsightsTab; children: ReactNode }, { hasError: boolean }> {
   state = { hasError: false };
@@ -56,46 +60,13 @@ function TabSkeleton() {
 
 export function InsightsHub({ initialTab = "Roast" }: { initialTab?: InsightsTab }) {
   const [activeTab, setActiveTab] = useState<InsightsTab>(initialTab);
-  const [replayIndex, setReplayIndex] = useState(0);
   const [loadedTabs, setLoadedTabs] = useState<Record<InsightsTab, boolean>>({
     Roast: initialTab === "Roast",
     "Smoke DNA": initialTab === "Smoke DNA",
-    "Smoke Replay": initialTab === "Smoke Replay",
     "Craving AI": initialTab === "Craving AI",
     Voice: initialTab === "Voice",
   });
   const data = useIntelligenceData();
-
-  const replaySlides = useMemo(
-    () => [
-      {
-        key: "month",
-        eyebrow: "Monthly replay",
-        title: data.monthlyReplay?.title ?? "Your Replay",
-        body: `${data.monthlyReplay?.analytics.cigarettesConsumed ?? data.analytics?.monthlyProjection ?? 0} cigarettes and ${data.analytics?.currencySymbol ?? "Rs"}${data.monthlyReplay?.analytics.moneyBurned ?? 0} burned this month.`,
-      },
-      {
-        key: "money",
-        eyebrow: "Yearly replay",
-        title: `${data.analytics?.currencySymbol ?? "Rs"}${data.yearlyReplay?.analytics.moneyBurned ?? data.analytics?.annualSpend ?? 0} spent`,
-        body: `Peak craving hour: ${data.yearlyReplay?.analytics.peakCravingHour ?? "unavailable"} with ${data.yearlyReplay?.analytics.cigarettesConsumed ?? 0} cigarettes tracked this year.`,
-      },
-      {
-        key: "pattern",
-        eyebrow: "Pattern spike",
-        title: `${data.profileLabel} behavior detected`,
-        body: data.smokeDna?.insights[0] ?? "Live Smoke DNA insights are being prepared from your backend data.",
-      },
-    ],
-    [data.analytics, data.monthlyReplay, data.profileLabel, data.smokeDna?.insights, data.yearlyReplay],
-  );
-
-  useEffect(() => {
-    const interval = window.setInterval(() => {
-      setReplayIndex((current) => (current + 1) % replaySlides.length);
-    }, 4200);
-    return () => window.clearInterval(interval);
-  }, [replaySlides.length]);
 
   useEffect(() => {
     setLoadedTabs((current) => (current[activeTab] ? current : { ...current, [activeTab]: true }));
@@ -149,7 +120,7 @@ export function InsightsHub({ initialTab = "Roast" }: { initialTab?: InsightsTab
       <div className="mb-6">
         <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Insights</div>
         <h1 className="mt-2 text-2xl font-semibold text-foreground">Smoking Intelligence</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Roast, behavior analytics, replay storytelling, craving forecasts, and Nova.</p>
+        <p className="mt-1 text-sm text-muted-foreground">Behavior analytics, craving forecasts, and Nova.</p>
       </div>
 
       {data.error ? (
@@ -159,29 +130,31 @@ export function InsightsHub({ initialTab = "Roast" }: { initialTab?: InsightsTab
       ) : null}
 
       <div className="sticky top-4 z-20 mb-6">
-        <GlassCard className="border border-foreground/10 py-3">
-          <div className="flex gap-2 overflow-x-auto pb-1">
+        <div className="bg-transparent">
+          <div className="grid grid-cols-4 gap-2">
             {tabs.map((tab) => {
-              const active = activeTab === tab;
+              const active = activeTab === tab.key;
               return (
                 <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  className={`relative whitespace-nowrap rounded-full px-4 py-2 text-xs font-semibold transition-colors ${active ? "text-primary-foreground" : "text-foreground"}`}
+                  key={tab.key}
+                  onClick={() => setActiveTab(tab.key)}
+                  className={`relative h-12 min-w-0 whitespace-nowrap rounded-full bg-black px-2 text-center text-[10px] font-semibold text-white shadow-sm transition-all hover:bg-black/90 ${
+                    active ? "ring-2 ring-black/10" : ""
+                  }`}
                 >
                   {active ? (
                     <motion.span
                       layoutId="insights-tab"
-                      className="absolute inset-0 rounded-full bg-primary"
+                      className="absolute inset-0 rounded-full bg-white/10"
                       transition={{ type: "spring", stiffness: 320, damping: 28 }}
                     />
                   ) : null}
-                  <span className="relative z-10">{tab}</span>
+                  <span className="relative z-10">{tab.label}</span>
                 </button>
               );
             })}
           </div>
-        </GlassCard>
+        </div>
       </div>
 
       {data.isLoading && !loadedTabs[activeTab] ? <TabSkeleton /> : null}
@@ -202,16 +175,6 @@ export function InsightsHub({ initialTab = "Roast" }: { initialTab?: InsightsTab
             <InsightsTabErrorBoundary tabName="Smoke DNA">
               <Suspense fallback={<TabSkeleton />}>
                 <SmokeDnaTab data={data} radarData={radarData} insightCards={insightCards} />
-              </Suspense>
-            </InsightsTabErrorBoundary>
-          </div>
-        ) : null}
-
-        {loadedTabs["Smoke Replay"] ? (
-          <div className={activeTab === "Smoke Replay" ? "block" : "hidden"}>
-            <InsightsTabErrorBoundary tabName="Smoke Replay">
-              <Suspense fallback={<TabSkeleton />}>
-                <SmokeReplayTab data={data} replaySlides={replaySlides} replayIndex={replayIndex} setReplayIndex={setReplayIndex} />
               </Suspense>
             </InsightsTabErrorBoundary>
           </div>

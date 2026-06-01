@@ -113,6 +113,8 @@ export async function syncNativeProtectionConfig(options: {
   blockMinute?: number;
   blockEndHour?: number;
   blockEndMinute?: number;
+  enabled?: boolean;
+  repeatType?: string;
 }) {
   if (!isNativeAndroid()) {
     return null;

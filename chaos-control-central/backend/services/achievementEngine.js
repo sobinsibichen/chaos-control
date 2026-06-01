@@ -33,14 +33,33 @@ const levelDefinitions = [
 ];
 
 async function ensureAchievementDefinitions(client) {
-  for (const achievement of achievementDefinitions) {
-    await client.query(
-      `
+  const values = [];
+  const placeholders = achievementDefinitions.map((achievement, index) => {
+    const offset = index * 12;
+    values.push(
+      achievement.key,
+      achievement.title,
+      achievement.description,
+      achievement.icon,
+      achievement.xpReward,
+      achievement.levelRequired,
+      achievement.category,
+      achievement.tier,
+      achievement.metricKey,
+      achievement.metricThreshold,
+      achievement.sortOrder,
+      achievement.isFinalReward,
+    );
+    return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8}, $${offset + 9}, $${offset + 10}, $${offset + 11}, $${offset + 12}, NOW())`;
+  });
+
+  await client.query(
+    `
         INSERT INTO public.achievements (
           achievement_key, title, description, icon, xp_reward, level_required, category, tier,
           metric_key, metric_threshold, sort_order, is_final_reward, created_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
+        VALUES ${placeholders.join(", ")}
         ON CONFLICT (achievement_key)
         DO UPDATE SET
           title = EXCLUDED.title,
@@ -55,39 +74,30 @@ async function ensureAchievementDefinitions(client) {
           sort_order = EXCLUDED.sort_order,
           is_final_reward = EXCLUDED.is_final_reward
       `,
-      [
-        achievement.key,
-        achievement.title,
-        achievement.description,
-        achievement.icon,
-        achievement.xpReward,
-        achievement.levelRequired,
-        achievement.category,
-        achievement.tier,
-        achievement.metricKey,
-        achievement.metricThreshold,
-        achievement.sortOrder,
-        achievement.isFinalReward,
-      ],
-    );
-  }
+    values,
+  );
 }
 
 async function ensureLevelDefinitions(client) {
-  for (const level of levelDefinitions) {
-    await client.query(
-      `
+  const values = [];
+  const placeholders = levelDefinitions.map((level, index) => {
+    const offset = index * 4;
+    values.push(level.levelNumber, level.levelName, level.requiredPoints, level.rewardTitle);
+    return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, NOW())`;
+  });
+
+  await client.query(
+    `
         INSERT INTO public.levels (level_number, level_name, required_points, reward_title, created_at)
-        VALUES ($1, $2, $3, $4, NOW())
+        VALUES ${placeholders.join(", ")}
         ON CONFLICT (level_number)
         DO UPDATE SET
           level_name = EXCLUDED.level_name,
           required_points = EXCLUDED.required_points,
           reward_title = EXCLUDED.reward_title
       `,
-      [level.levelNumber, level.levelName, level.requiredPoints, level.rewardTitle],
-    );
-  }
+    values,
+  );
 }
 
 function toNumber(value, fallback = 0) {
