@@ -10,8 +10,8 @@ import {
 import { useEffect } from "react";
 import { Toaster } from "react-hot-toast";
 
+import { LoadingOverlay } from "@/components/lp/LoadingOverlay";
 import appCss from "../styles.css?url";
-import { AnimatedBackground } from "@/components/lp/AnimatedBackground";
 import { bootstrapAuth } from "@/lib/auth";
 import { perfLog, sampleMemory, useRenderCounter } from "@/lib/performance";
 import { RealtimeProvider } from "@/lib/realtime";
@@ -146,10 +146,10 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <RealtimeProvider>
-        <AnimatedBackground />
         <div className="relative z-10">
           <Outlet />
         </div>
+        <LoadingOverlay />
       </RealtimeProvider>
     </QueryClientProvider>
   );

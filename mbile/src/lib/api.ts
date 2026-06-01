@@ -5,6 +5,7 @@ import axios, {
   type InternalAxiosRequestConfig,
 } from "axios";
 import { appStore } from "@/lib/app-store";
+import { loadingStore } from "@/lib/loading-store";
 import { perfLog } from "@/lib/performance";
 import { getStoredToken } from "@/lib/session";
 
@@ -45,12 +46,17 @@ interface ApiRequestOptions extends Omit<AxiosRequestConfig, "url" | "data" | "h
   body?: unknown;
   headers?: Record<string, string>;
   timeout?: number;
+  loadingMessage?: string;
+  skipLoading?: boolean;
 }
 
 type ApiInternalConfig = InternalAxiosRequestConfig & {
   skipAuth?: boolean;
+  loadingMessage?: string;
+  skipLoading?: boolean;
   metadata?: {
     startedAt: number;
+    loadingId?: string;
   };
 };
 
@@ -72,6 +78,41 @@ function shouldDebugAuthRequest(url?: string) {
 
 function shouldInvalidateSession(config?: ApiInternalConfig) {
   return config?.skipAuth !== true;
+}
+
+function loadingMessageForRequest(method: string, url: string) {
+  if (/\/api\/auth\/login/.test(url)) {
+    return "Logging you in...";
+  }
+  if (/\/api\/auth\/signup/.test(url)) {
+    return "Creating your account...";
+  }
+  if (/\/api\/auth\/me/.test(url)) {
+    return "Restoring your session...";
+  }
+  if (/\/api\/cigarettes\/log/.test(url)) {
+    return "Saving cigarette...";
+  }
+  if (/\/api\/cigarettes\/quit/.test(url)) {
+    return "Starting quit attempt...";
+  }
+  if (/\/api\/stats\/dashboard/.test(url)) {
+    return "Loading dashboard...";
+  }
+  if (/\/api\/profile\/preferences/.test(url)) {
+    return "Updating settings...";
+  }
+  if (/\/api\/profile/.test(url)) {
+    return method === "GET" ? "Loading profile..." : "Updating profile...";
+  }
+  if (/\/api\/analytics|\/api\/smoke-dna|\/api\/smoke-replay|\/api\/craving-predictions/.test(url)) {
+    return "Generating insights...";
+  }
+  if (/\/api\/apps/.test(url)) {
+    return "Updating protection...";
+  }
+
+  return method === "GET" ? "Loading..." : "Saving...";
 }
 
 function redactHeaders(headers?: Record<string, unknown>) {
@@ -183,12 +224,19 @@ apiClient.interceptors.request.use((config: ApiInternalConfig) => {
     console.info(`[api-debug] request headers for ${method} ${url}`, redactHeaders(config.headers.toJSON()));
   }
 
+  if (config.skipLoading !== true) {
+    config.metadata.loadingId = loadingStore.startLoading(config.loadingMessage || loadingMessageForRequest(method, url));
+  }
+
   return config;
 });
 
 apiClient.interceptors.response.use(
   (response) => {
     const config = response.config as ApiInternalConfig;
+    if (config.metadata?.loadingId) {
+      loadingStore.stopLoading(config.metadata.loadingId);
+    }
     const startedAt = config.metadata?.startedAt;
     if (startedAt) {
       const durationMs = Math.round((typeof performance !== "undefined" ? performance.now() : Date.now()) - startedAt);
@@ -203,6 +251,10 @@ apiClient.interceptors.response.use(
     return response;
   },
   (error: AxiosError<{ message?: string }>) => {
+    const config = error.config as ApiInternalConfig | undefined;
+    if (config?.metadata?.loadingId) {
+      loadingStore.stopLoading(config.metadata.loadingId);
+    }
     const status = error.response?.status;
     const url = error.config?.url ?? "";
     const method = ((error.config?.method ?? "get") as string).toUpperCase();
@@ -222,7 +274,6 @@ apiClient.interceptors.response.use(
       responseBody: error.response?.data,
       error,
     });
-    const config = error.config as ApiInternalConfig | undefined;
     const startedAt = config?.metadata?.startedAt;
     if (startedAt) {
       perfLog("api:error", {
@@ -261,7 +312,7 @@ function normalizeBody(body: unknown, headers: Record<string, string>) {
 }
 
 export async function apiRequest<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
-  const { auth = true, body, method = "GET", headers = {}, timeout, ...rest } = options;
+  const { auth = true, body, method = "GET", headers = {}, timeout, loadingMessage, skipLoading, ...rest } = options;
   const data = normalizeBody(body, headers);
   const nextHeaders = { ...headers };
 
@@ -276,6 +327,8 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
     headers: nextHeaders,
     timeout,
     skipAuth: !auth,
+    loadingMessage,
+    skipLoading,
     ...rest,
   } as ApiInternalConfig);
 

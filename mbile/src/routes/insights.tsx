@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { InsightsHub } from "@/components/lp/insights/InsightsHub";
+import { lazy, Suspense } from "react";
 import { useRenderCounter, useScreenPerformance } from "@/lib/performance";
 
 export const Route = createFileRoute("/insights")({
@@ -10,5 +10,10 @@ export const Route = createFileRoute("/insights")({
 function InsightsPage() {
   useRenderCounter("InsightsPage");
   useScreenPerformance("insights", true);
-  return <InsightsHub initialTab="Roast" />;
+  return (
+    <Suspense fallback={null}>
+      <InsightsHub initialTab="Roast" />
+    </Suspense>
+  );
 }
+const InsightsHub = lazy(async () => ({ default: (await import("@/components/lp/insights/InsightsHub")).InsightsHub }));

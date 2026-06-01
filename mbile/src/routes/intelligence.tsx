@@ -1,5 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { InsightsHub } from "@/components/lp/insights/InsightsHub";
+import { lazy, Suspense } from "react";
+
+const InsightsHub = lazy(async () => ({ default: (await import("@/components/lp/insights/InsightsHub")).InsightsHub }));
 
 export const Route = createFileRoute("/intelligence")({
   head: () => ({ meta: [{ title: "Intelligence - Last Puff" }] }),
@@ -7,5 +9,9 @@ export const Route = createFileRoute("/intelligence")({
 });
 
 function IntelligenceRoute() {
-  return <InsightsHub initialTab="Smoke DNA" />;
+  return (
+    <Suspense fallback={null}>
+      <InsightsHub initialTab="Smoke DNA" />
+    </Suspense>
+  );
 }

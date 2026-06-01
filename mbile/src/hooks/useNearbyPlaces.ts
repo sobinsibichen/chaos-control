@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { createFavoriteStore, deleteFavoriteStore, listFavoriteStores } from "@/lib/intelligenceApi";
+import { withLoader } from "@/lib/loading-store";
 import { queryKeys } from "@/lib/query-keys";
 import { buildDirectionsUrl, type LatLngLiteral, type NearbyStore, searchNearbyStores } from "@/services/googlePlaces";
 
@@ -77,7 +78,7 @@ export function useNearbyPlaces(ready: boolean) {
     try {
       setLocating(true);
       setError("");
-      const nextLocation = await requestLocation();
+      const nextLocation = await withLoader(requestLocation, "Finding your location...");
       setLocation(nextLocation);
       return nextLocation;
     } catch (locateError) {
@@ -103,10 +104,14 @@ export function useNearbyPlaces(ready: boolean) {
       try {
         setLoading(true);
         setError("");
-        const results = await searchNearbyStores({
-          location,
-          query: searchTerm,
-        });
+        const results = await withLoader(
+          () =>
+            searchNearbyStores({
+              location,
+              query: searchTerm,
+            }),
+          "Loading nearby stores...",
+        );
 
         if (requestId !== requestIdRef.current) {
           return;
@@ -154,7 +159,7 @@ export function useNearbyPlaces(ready: boolean) {
       } : previous);
 
       try {
-        await removeFavoriteMutation.mutateAsync(existing.id);
+        await withLoader(() => removeFavoriteMutation.mutateAsync(existing.id), "Removing favorite...");
       } catch {
         queryClient.setQueryData(queryKeys.favoriteStores, previous);
       }
@@ -189,22 +194,26 @@ export function useNearbyPlaces(ready: boolean) {
     });
 
     try {
-      await saveFavoriteMutation.mutateAsync({
-        placeId: store.placeId,
-        storeName: store.name,
-        address: store.address,
-        phoneNumber: store.phoneNumber,
-        mapsUrl: buildDirectionsUrl(store),
-        rating: store.rating ?? null,
-        isOpen: store.isOpen,
-        latitude: store.location.lat,
-        longitude: store.location.lng,
-        metadata: {
-          image: store.photoUrl,
-          matchedKeyword: store.matchedKeyword,
-          distanceMeters: store.distanceMeters,
-        },
-      });
+      await withLoader(
+        () =>
+          saveFavoriteMutation.mutateAsync({
+            placeId: store.placeId,
+            storeName: store.name,
+            address: store.address,
+            phoneNumber: store.phoneNumber,
+            mapsUrl: buildDirectionsUrl(store),
+            rating: store.rating ?? null,
+            isOpen: store.isOpen,
+            latitude: store.location.lat,
+            longitude: store.location.lng,
+            metadata: {
+              image: store.photoUrl,
+              matchedKeyword: store.matchedKeyword,
+              distanceMeters: store.distanceMeters,
+            },
+          }),
+        "Saving favorite...",
+      );
     } catch {
       queryClient.setQueryData(queryKeys.favoriteStores, previous);
     }
