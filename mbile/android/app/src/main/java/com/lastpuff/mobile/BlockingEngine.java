@@ -249,15 +249,7 @@ public final class BlockingEngine {
         BlockingRepository.setServiceRunning(context, true);
     }
 
-    public static void markOverlayShown(Context context, String packageName) {
-        BlockingRepository.setLastBlockedPackage(context, packageName);
-        BlockingRepository.setLastOverlayTriggerAt(context, System.currentTimeMillis());
-        BlockingRepository.setOverlayVisible(context, true);
-    }
 
-    public static void markOverlayHidden(Context context) {
-        BlockingRepository.setOverlayVisible(context, false);
-    }
 
     public static String resolveForegroundPackage(Context context) {
         if (context == null) {
@@ -327,20 +319,6 @@ public final class BlockingEngine {
             return;
         }
 
-        long remainingMillis = getRemainingBlockMillis(context);
-        if (isOverlayPermissionGranted(context)) {
-            boolean overlayShown = BlockOverlayManager.getInstance(context).showOverlay(
-                packageName,
-                resolveAppName(context, packageName),
-                reason,
-                remainingMillis
-            );
-            if (overlayShown) {
-                markOverlayShown(context, packageName);
-                return;
-            }
-        }
-
         Intent intent = new Intent(context, BlockScreenActivity.class);
         intent.addFlags(
             Intent.FLAG_ACTIVITY_NEW_TASK |
@@ -361,8 +339,6 @@ public final class BlockingEngine {
 
         if (shouldBlockPackage(context, packageName)) {
             launchBlockScreen(context, packageName, source);
-        } else if (BlockingRepository.isOverlayVisible(context)) {
-            BlockOverlayManager.getInstance(context).refreshOverlay();
         }
     }
 
@@ -446,6 +422,22 @@ public final class BlockingEngine {
 
     public static String getBlockWindowLabel(Context context) {
         return BlockingRepository.getBlockWindowLabel(context);
+    }
+
+    public static String getBlockStartTimeLabel(Context context) {
+        if (context == null) {
+            return "N/A";
+        }
+        CachedSchedule schedule = getCachedSchedule(context);
+        return String.format("%02d:%02d", schedule.blockHour, schedule.blockMinute);
+    }
+
+    public static String getBlockEndTimeLabel(Context context) {
+        if (context == null) {
+            return "N/A";
+        }
+        CachedSchedule schedule = getCachedSchedule(context);
+        return String.format("%02d:%02d", schedule.blockEndHour, schedule.blockEndMinute);
     }
 
     private static boolean hasCustomEndWindow(CachedSchedule schedule) {

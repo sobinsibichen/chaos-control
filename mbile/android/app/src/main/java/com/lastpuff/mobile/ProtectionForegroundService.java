@@ -82,19 +82,12 @@ public class ProtectionForegroundService extends Service {
 
             if (BlockingEngine.shouldBlockPackage(this, foregroundPackage)) {
                 long now = System.currentTimeMillis();
-                String lastBlockedPackage = BlockingRepository.getLastBlockedPackage(this);
-                if (!BlockingRepository.isOverlayVisible(this) || !foregroundPackage.equals(lastBlockedPackage)) {
-                    if (foregroundPackage.equals(this.lastBlockedPackage) && now - lastBlockedAt < BLOCK_DEBOUNCE_MS) {
-                        return;
-                    }
-                    BlockingEngine.launchBlockScreen(this, foregroundPackage, "foreground-service");
-                    this.lastBlockedPackage = foregroundPackage;
-                    this.lastBlockedAt = now;
-                } else {
-                    BlockOverlayManager.getInstance(this).refreshOverlay();
+                if (foregroundPackage.equals(this.lastBlockedPackage) && now - lastBlockedAt < BLOCK_DEBOUNCE_MS) {
+                    return;
                 }
-            } else if (BlockingRepository.isOverlayVisible(this)) {
-                BlockOverlayManager.getInstance(this).hideOverlay();
+                BlockingEngine.launchBlockScreen(this, foregroundPackage, "foreground-service");
+                this.lastBlockedPackage = foregroundPackage;
+                this.lastBlockedAt = now;
             }
         } catch (Exception error) {
             Log.e(TAG, "Monitoring tick failed", error);

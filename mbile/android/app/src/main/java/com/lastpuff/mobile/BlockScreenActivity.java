@@ -52,7 +52,6 @@ public class BlockScreenActivity extends Activity {
 
         blockedPackageName = getIntent().getStringExtra("packageName");
         String appName = getIntent().getStringExtra("appName");
-        String reason = getIntent().getStringExtra("reason");
         if (appName == null || appName.trim().isEmpty()) {
             appName = "This app";
         }
@@ -62,17 +61,18 @@ public class BlockScreenActivity extends Activity {
             return;
         }
 
-        TextView title = findViewById(R.id.blocked_app_title);
-        TextView body = findViewById(R.id.blocked_app_body);
-        TextView hint = findViewById(R.id.blocked_app_hint);
+        TextView appNameLabel = findViewById(R.id.blocked_app_name_label);
+        TextView packageNameView = findViewById(R.id.blocked_package_name);
+        TextView scheduleStartView = findViewById(R.id.blocked_schedule_start);
+        TextView scheduleEndView = findViewById(R.id.blocked_schedule_end);
         countdownView = findViewById(R.id.blocked_countdown);
         Button openLastPuff = findViewById(R.id.blocked_open_last_puff);
         Button goHome = findViewById(R.id.blocked_go_home);
 
-        title.setText(appName + " is blocked");
-        body.setText(getString(R.string.block_screen_quote));
-        String schedule = "Schedule " + BlockingEngine.getBlockWindowLabel(this) + " • " + (reason == null ? "protection active" : reason);
-        hint.setText(schedule + (blockedPackageName == null ? "" : " • " + blockedPackageName));
+        appNameLabel.setText("App: " + appName);
+        packageNameView.setText("Package: " + (blockedPackageName == null ? "unknown" : blockedPackageName));
+        scheduleStartView.setText(BlockingEngine.getBlockStartTimeLabel(this));
+        scheduleEndView.setText(BlockingEngine.getBlockEndTimeLabel(this));
         countdownView.setText(BlockingEngine.getCountdownLabel(this));
 
         openLastPuff.setOnClickListener(view -> {

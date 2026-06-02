@@ -47,8 +47,6 @@ public class BlockAccessibilityService extends AccessibilityService {
             lastBlockedPackage = packageName;
             lastBlockedAt = now;
             BlockingEngine.launchBlockScreen(this, packageName, "accessibility");
-        } else if (BlockingRepository.isOverlayVisible(this)) {
-            com.lastpuff.mobile.BlockOverlayManager.getInstance(this).refreshOverlay();
         }
         long durationMicros = (SystemClock.elapsedRealtimeNanos() - startedAt) / 1000L;
         if (durationMicros > 50_000L) {

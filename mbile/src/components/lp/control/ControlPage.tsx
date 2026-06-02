@@ -158,7 +158,7 @@ function isProtectionReady(status: NativeProtectionStatus | null) {
   );
 }
 
-type PermissionWizardStep = "intro" | "restricted" | "accessibility" | "usage" | "overlay" | "done";
+type PermissionWizardStep = "intro" | "restricted" | "accessibility" | "accessibility-permission-required" | "usage" | "overlay" | "done";
 
 function PermissionWizard({
   status,
@@ -172,6 +172,8 @@ function PermissionWizard({
   onComplete: () => void;
 }) {
   const [started, setStarted] = useState(false);
+  const [hasTriedAccessibility, setHasTriedAccessibility] = useState(false);
+  
   const nextStep = (() => {
     if (!open) {
       return "done" as PermissionWizardStep;
@@ -186,7 +188,11 @@ function PermissionWizard({
       return "restricted" as PermissionWizardStep;
     }
     if (!status.accessibilityEnabled || !status.accessibilityActive) {
-      return "accessibility" as PermissionWizardStep;
+      // Two-phase accessibility: first try settings, then if still disabled, go to app info
+      if (!hasTriedAccessibility) {
+        return "accessibility" as PermissionWizardStep;
+      }
+      return "accessibility-permission-required" as PermissionWizardStep;
     }
     if (!status.usageAccessGranted) {
       return "usage" as PermissionWizardStep;
@@ -215,9 +221,16 @@ function PermissionWizard({
       primary: "Open App Info",
     },
     accessibility: {
-      title: "Enable Accessibility",
-      description: "Open Accessibility, then choose Installed Services and Last Puff.",
+      title: "Enable Accessibility Service",
+      description: "Last Puff needs access to monitor apps on your device.",
       primary: "Open Accessibility",
+      secondary: "Re-check permissions",
+    },
+    "accessibility-permission-required": {
+      title: "One more step required",
+      description: "Android requires an extra permission before Last Puff can enable protection.",
+      primary: "Fix Permission",
+      secondary: "Re-check permissions",
     },
     usage: {
       title: "Allow Usage Access",
@@ -239,6 +252,7 @@ function PermissionWizard({
   useEffect(() => {
     if (!open) {
       setStarted(false);
+      setHasTriedAccessibility(false);
     }
   }, [open]);
 
@@ -260,11 +274,18 @@ function PermissionWizard({
     }
     if (nextStep === "restricted") {
       void openNativeAppInfo();
-      onRefresh();
+      setTimeout(() => onRefresh(), 500);
       return;
     }
     if (nextStep === "accessibility") {
+      setHasTriedAccessibility(true);
       void openNativeAccessibilitySettings();
+      setTimeout(() => onRefresh(), 500);
+      return;
+    }
+    if (nextStep === "accessibility-permission-required") {
+      void openNativeAppInfo();
+      setTimeout(() => onRefresh(), 500);
       return;
     }
     if (nextStep === "usage") {
@@ -275,6 +296,10 @@ function PermissionWizard({
       void openNativeOverlaySettings();
       return;
     }
+  };
+
+  const handleSecondary = () => {
+    onRefresh();
   };
 
   const permissionRows = [
@@ -300,11 +325,24 @@ function PermissionWizard({
 
             {nextStep === "restricted" ? (
               <div className="mt-4 rounded-2xl border border-foreground/10 bg-card p-4 text-sm text-foreground">
-                <div className="mb-3 font-semibold">Step 1</div>
-                <ol className="space-y-2">
-                  <li>1. Open App Info</li>
-                  <li>2. Tap the 3 dots</li>
-                  <li>3. Allow Restricted Settings</li>
+                <div className="mb-3 font-semibold">Quick Steps</div>
+                <ol className="space-y-2 text-xs">
+                  <li>1. Tap "Open App Info" below</li>
+                  <li>2. Tap the menu (⋮) at top right</li>
+                  <li>3. Select "Allow Restricted Settings"</li>
+                  <li>4. Return here and refresh</li>
+                </ol>
+              </div>
+            ) : null}
+
+            {nextStep === "accessibility-permission-required" ? (
+              <div className="mt-4 rounded-2xl border border-foreground/10 bg-card p-4 text-sm text-foreground">
+                <div className="mb-3 font-semibold">Quick Steps</div>
+                <ol className="space-y-2 text-xs">
+                  <li>1. Tap the ⋮ menu</li>
+                  <li>2. Tap "Allow Restricted Settings"</li>
+                  <li>3. Return to Accessibility</li>
+                  <li>4. Enable Last Puff</li>
                 </ol>
               </div>
             ) : null}
@@ -317,10 +355,10 @@ function PermissionWizard({
                 {activeConfig.primary}
               </button>
               <button
-                onClick={onRefresh}
+                onClick={handleSecondary}
                 className="rounded-2xl border border-foreground/10 bg-background px-4 py-3 text-sm font-semibold text-foreground shadow-sm"
               >
-                Re-check permissions
+                {activeConfig.secondary || "Re-check permissions"}
               </button>
             </div>
 
