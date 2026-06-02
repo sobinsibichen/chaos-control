@@ -16,6 +16,7 @@ import { queryKeys } from "@/lib/query-keys";
 import { sampleMemory, useRenderCounter, useScreenPerformance } from "@/lib/performance";
 import { formatSmokeFree, useSmokeFreeTicker } from "@/lib/time";
 import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
+import { ensureNativeNotificationPermission, sendNativeTestNotification } from "@/lib/native/mobile";
 
 const funnyMessages = [
   "Your lighter is crying.",
@@ -179,6 +180,10 @@ export function DashboardPage() {
   }, [dashboard]);
 
   useEffect(() => {
+    void ensureNativeNotificationPermission().catch(() => {});
+  }, []);
+
+  useEffect(() => {
     if (!dashboard) {
       return;
     }
@@ -244,6 +249,12 @@ export function DashboardPage() {
         queryClient.setQueryData(dashboardQueryKey, context.previous);
       }
       setErrorMessage(error instanceof Error ? error.message : "Unable to log cigarette.");
+    },
+    onSuccess: () => {
+      void sendNativeTestNotification({
+        title: "Cigarette Logged",
+        body: "Your progress has been updated.",
+      }).catch(() => {});
     },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: dashboardQueryKey });

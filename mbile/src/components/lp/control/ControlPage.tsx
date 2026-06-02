@@ -91,6 +91,7 @@ const fallbackAppIcon: keyof typeof iconMap = "LayoutGrid";
 const CONTROL_CACHE_KEY = "last-puff-control-cache";
 const CONTROL_CACHE_STALE_MS = 5 * 60 * 1000;
 const CONTROL_PERMISSION_WIZARD_KEY = "last-puff-control-permission-wizard-complete";
+const CONTROL_ACCESSIBILITY_ATTEMPTED_KEY = "last-puff-accessibility-attempted";
 
 function formatTime24(hour: number, minute: number) {
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
@@ -107,6 +108,14 @@ function formatDisplayTime(hour: number, minute: number) {
 
 function formatBlockWindow(startHour: number, startMinute: number, endHour: number, endMinute: number) {
   return `${formatDisplayTime(startHour, startMinute)} → ${formatDisplayTime(endHour, endMinute)}`;
+}
+
+function minutesFromTime(hour: number, minute: number) {
+  return hour * 60 + minute;
+}
+
+function isTimeRangeValid(startHour: number, startMinute: number, endHour: number, endMinute: number) {
+  return minutesFromTime(endHour, endMinute) > minutesFromTime(startHour, startMinute);
 }
 
 function parseBlockWindow(blockTime?: string | null) {
@@ -165,11 +174,15 @@ function PermissionWizard({
   open,
   onRefresh,
   onComplete,
+  accessibilityAttempted,
+  onAccessibilityAttempt,
 }: {
   status: NativeProtectionStatus | null;
   open: boolean;
   onRefresh: () => void;
   onComplete: () => void;
+  accessibilityAttempted: boolean;
+  onAccessibilityAttempt: () => void;
 }) {
   const [started, setStarted] = useState(false);
   
@@ -183,15 +196,9 @@ function PermissionWizard({
     if (!status) {
       return "intro" as PermissionWizardStep;
     }
-    if (status.restrictedSettingsRequired || !status.restrictedSettingsAllowed) {
-      return "restricted" as PermissionWizardStep;
-    }
     if (!status.accessibilityEnabled || !status.accessibilityActive) {
-      // State machine based on actual permission state, not stale flags:
-      // If restricted settings is NOT allowed, need to fix permission first
-      // If restricted settings IS allowed, just need to enable accessibility
       if (!status.restrictedSettingsAllowed) {
-        return "accessibility-permission-required" as PermissionWizardStep;
+        return accessibilityAttempted ? "accessibility-permission-required" : "accessibility";
       }
       return "accessibility" as PermissionWizardStep;
     }
@@ -278,6 +285,7 @@ function PermissionWizard({
       return;
     }
     if (nextStep === "accessibility") {
+      onAccessibilityAttempt();
       void openNativeAccessibilitySettings();
       setTimeout(() => onRefresh(), 500);
       return;
@@ -457,6 +465,12 @@ export default function ControlPage() {
   const [installedApps, setInstalledApps] = useState<CatalogApp[]>([]);
   const [nativeProtectionStatus, setNativeProtectionStatus] = useState<NativeProtectionStatus | null>(null);
   const [permissionWizardOpen, setPermissionWizardOpen] = useState(false);
+  const [accessibilityAttempted, setAccessibilityAttempted] = useState(() => {
+    if (typeof window === "undefined") {
+      return false;
+    }
+    return window.localStorage.getItem(CONTROL_ACCESSIBILITY_ATTEMPTED_KEY) === "true";
+  });
   const hasLoadedRef = useRef(false);
   const controlCacheUpdatedAtRef = useRef(0);
   const installedAppsLoadedRef = useRef(false);
@@ -485,6 +499,13 @@ export default function ControlPage() {
         throw error;
       }
       return null;
+    }
+  }, []);
+
+  const markAccessibilityAttempted = useCallback(() => {
+    setAccessibilityAttempted(true);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(CONTROL_ACCESSIBILITY_ATTEMPTED_KEY, "true");
     }
   }, []);
 
@@ -589,8 +610,18 @@ export default function ControlPage() {
       return;
     }
 
+    if (scheduleIsActive) {
+      setErrorMessage("Schedule is currently active and cannot be modified.");
+      return;
+    }
+
+    if (!selectedAppsCount || !hasValidTimeRange) {
+      setErrorMessage(scheduleValidationMessages[0] || "Complete the schedule before saving.");
+      return;
+    }
+
     const nextBlockTime = `${formatTime24(blockHour, blockMinute)}-${formatTime24(blockEndHour, blockEndMinute)}`;
-    setSavingSchedule(false);
+    setSavingSchedule(true);
     setErrorMessage("");
     setScheduleSuccessMessage("Saved successfully.");
 
@@ -620,6 +651,7 @@ export default function ControlPage() {
         });
         setNativeProtectionStatus(status);
       }
+      setSavingSchedule(false);
     });
   };
 
@@ -685,6 +717,13 @@ export default function ControlPage() {
   }, [apps, blockEndHour, blockEndMinute, blockHour, blockMinute, blockTime, hydrated, isAuthenticated]);
 
   const selectedAppsCount = apps.filter((item) => item.is_active).length;
+  const scheduleIsActive = Boolean(nativeProtectionStatus?.withinBlockedWindow && selectedAppsCount > 0);
+  const hasValidTimeRange = isTimeRangeValid(blockHour, blockMinute, blockEndHour, blockEndMinute);
+  const scheduleValidationMessages = [
+    selectedAppsCount ? "" : "Select at least one app.",
+    hasValidTimeRange ? "" : "End time must be after start time.",
+  ].filter(Boolean);
+  const canSaveSchedule = !scheduleIsActive && selectedAppsCount > 0 && hasValidTimeRange && !savingSchedule;
 
   const pickerApps = useMemo(() => {
     const sourceApps = isNativeAndroid() ? installedApps : installedApps.length ? installedApps : appCatalog;
@@ -863,6 +902,11 @@ export default function ControlPage() {
   }, [permissionWizardOpen]);
 
   const openPicker = () => {
+    if (scheduleIsActive) {
+      setErrorMessage("Schedule is currently active and cannot be modified.");
+      return;
+    }
+
     const loadInstalledApps = async () => {
       if (!isNativeAndroid() || installedAppsLoadedRef.current) {
         return;
@@ -915,6 +959,12 @@ export default function ControlPage() {
   };
 
   const saveSelectedApps = async () => {
+    if (scheduleIsActive) {
+      setErrorMessage("Schedule is currently active and cannot be modified.");
+      setPickerOpen(false);
+      return;
+    }
+
     const sourceApps = isNativeAndroid() ? installedApps : installedApps.length ? installedApps : appCatalog;
     const selectedApps = sourceApps.filter((item) =>
       draftSelectedPackages.includes(item.packageName || item.appName),
@@ -968,6 +1018,11 @@ export default function ControlPage() {
   };
 
   const toggleSelectedApp = async (app: AppItem) => {
+    if (scheduleIsActive) {
+      setErrorMessage("Schedule is currently active and cannot be modified.");
+      return;
+    }
+
     const nextIsActive = !app.is_active;
     setApps((current) => current.map((item) => (item.id === app.id ? { ...item, is_active: nextIsActive } : item)));
 
@@ -986,6 +1041,8 @@ export default function ControlPage() {
         status={nativeProtectionStatus}
         onRefresh={() => void refreshNativeProtectionStatus()}
         onComplete={completePermissionWizard}
+        accessibilityAttempted={accessibilityAttempted}
+        onAccessibilityAttempt={markAccessibilityAttempted}
       />
       <div className="mb-6">
         <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Protection</div>
@@ -1336,5 +1393,3 @@ export default function ControlPage() {
     </AppShell>
   );
 }
-
-

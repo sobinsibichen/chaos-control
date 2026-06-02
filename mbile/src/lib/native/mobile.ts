@@ -32,6 +32,9 @@ interface ProtectionPlugin {
   openOverlaySettings(): Promise<void>;
   openUsageAccessSettings(): Promise<void>;
   requestIgnoreBatteryOptimizations(): Promise<NativeProtectionStatus>;
+  checkNotificationPermission(): Promise<{ granted: boolean }>;
+  requestNotificationPermission(): Promise<{ granted: boolean }>;
+  sendTestNotification(options?: { title?: string; body?: string }): Promise<{ delivered: boolean }>;
 }
 
 export interface NativeProtectionStatus {
@@ -202,4 +205,26 @@ export async function requestNativeBatteryOptimizationExemption() {
   }
 
   return Protection.requestIgnoreBatteryOptimizations();
+}
+
+export async function ensureNativeNotificationPermission() {
+  if (!isNativeAndroid()) {
+    return true;
+  }
+
+  const current = await Protection.checkNotificationPermission();
+  if (current.granted) {
+    return true;
+  }
+
+  const requested = await Protection.requestNotificationPermission();
+  return requested.granted;
+}
+
+export async function sendNativeTestNotification(options?: { title?: string; body?: string }) {
+  if (!isNativeAndroid()) {
+    return null;
+  }
+
+  return Protection.sendTestNotification(options);
 }

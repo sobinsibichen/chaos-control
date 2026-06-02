@@ -1,13 +1,16 @@
 package com.lastpuff.mobile;
 
+import android.Manifest;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
 import android.text.TextUtils;
 
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
 
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
@@ -191,6 +194,49 @@ public class ProtectionPlugin extends Plugin {
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         getContext().startActivity(intent);
         call.resolve(buildStatus());
+    }
+
+    @PluginMethod
+    public void checkNotificationPermission(PluginCall call) {
+        JSObject result = new JSObject();
+        result.put("granted", NotificationHelper.hasNotificationPermission(getContext()));
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void requestNotificationPermission(PluginCall call) {
+        NotificationChannelManager.createAllChannels(getContext());
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || NotificationHelper.hasNotificationPermission(getContext())) {
+            JSObject result = new JSObject();
+            result.put("granted", true);
+            call.resolve(result);
+            return;
+        }
+
+        if (getActivity() == null) {
+            call.reject("Notification permission requires an active Android screen.");
+            return;
+        }
+
+        ActivityCompat.requestPermissions(
+            getActivity(),
+            new String[]{Manifest.permission.POST_NOTIFICATIONS},
+            4207
+        );
+
+        JSObject result = new JSObject();
+        result.put("granted", getContext().checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED);
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void sendTestNotification(PluginCall call) {
+        String title = call.getString("title", "Cigarette Logged");
+        String body = call.getString("body", "Your progress has been updated.");
+        NotificationHelper.sendReminderNotification(getContext(), title, body);
+        JSObject result = new JSObject();
+        result.put("delivered", NotificationHelper.hasNotificationPermission(getContext()));
+        call.resolve(result);
     }
 
     private void showTimePicker(AppCompatActivity activity, String title, int hour, int minute, TimePickerCallback callback) {

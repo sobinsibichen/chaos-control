@@ -1,6 +1,7 @@
 package com.lastpuff.mobile;
 
 import android.app.AlarmManager;
+import android.app.AppOpsManager;
 import android.app.PendingIntent;
 import android.app.usage.UsageEvents;
 import android.app.usage.UsageStatsManager;
@@ -143,25 +144,22 @@ public final class BlockingEngine {
             return true;
         }
 
-        AccessibilityManager accessibilityManager = (AccessibilityManager) context.getSystemService(Context.ACCESSIBILITY_SERVICE);
-        if (accessibilityManager == null) {
+        AppOpsManager appOpsManager = (AppOpsManager) context.getSystemService(Context.APP_OPS_SERVICE);
+        if (appOpsManager == null) {
             return false;
         }
 
-        String expected = new ComponentName(context, com.lastpuff.mobile.services.BlockAccessibilityService.class).flattenToString();
-        for (android.accessibilityservice.AccessibilityServiceInfo serviceInfo : accessibilityManager.getInstalledAccessibilityServiceList()) {
-            if (serviceInfo == null || serviceInfo.getResolveInfo() == null || serviceInfo.getResolveInfo().serviceInfo == null) {
-                continue;
-            }
-
-            android.content.pm.ServiceInfo info = serviceInfo.getResolveInfo().serviceInfo;
-            String serviceName = new ComponentName(info.packageName, info.name).flattenToString();
-            if (expected.equalsIgnoreCase(serviceName)) {
-                return true;
-            }
+        try {
+            int mode = appOpsManager.checkOpNoThrow(
+                "android:access_restricted_settings",
+                android.os.Process.myUid(),
+                context.getPackageName()
+            );
+            return mode == AppOpsManager.MODE_ALLOWED;
+        } catch (Exception error) {
+            Log.w(TAG, "Unable to read restricted settings app-op", error);
+            return false;
         }
-
-        return false;
     }
 
     public static boolean hasRequiredBlockingPermissions(Context context) {

@@ -1,11 +1,15 @@
 package com.lastpuff.mobile;
 
 import android.app.PendingIntent;
+import android.Manifest;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.os.Build;
 
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
+import androidx.core.content.ContextCompat;
 
 /**
  * Helper class for sending important notifications on the appropriate channels.
@@ -90,6 +94,12 @@ public class NotificationHelper {
         String message,
         int notificationId
     ) {
+        if (!hasNotificationPermission(context)) {
+            return;
+        }
+
+        NotificationChannelManager.createAllChannels(context);
+
         Intent launchIntent = new Intent(context, MainActivity.class);
         launchIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         PendingIntent pendingIntent = PendingIntent.getActivity(
@@ -111,10 +121,15 @@ public class NotificationHelper {
             // Allow notification to show on lock screen
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             // Ensure sound and vibration work
-            .setSound(null) // Uses channel's sound settings
+            .setDefaults(NotificationCompat.DEFAULT_ALL)
             .setVibrate(new long[]{0, 250, 250, 250});
 
         NotificationManagerCompat notificationManager = NotificationManagerCompat.from(context);
         notificationManager.notify(notificationId, builder.build());
+    }
+
+    public static boolean hasNotificationPermission(Context context) {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
+            || ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
     }
 }
