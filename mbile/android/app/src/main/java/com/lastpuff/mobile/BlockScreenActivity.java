@@ -66,7 +66,6 @@ public class BlockScreenActivity extends Activity {
         TextView scheduleStartView = findViewById(R.id.blocked_schedule_start);
         TextView scheduleEndView = findViewById(R.id.blocked_schedule_end);
         countdownView = findViewById(R.id.blocked_countdown);
-        Button openLastPuff = findViewById(R.id.blocked_open_last_puff);
         Button goHome = findViewById(R.id.blocked_go_home);
 
         appNameLabel.setText("App: " + appName);
@@ -74,15 +73,6 @@ public class BlockScreenActivity extends Activity {
         scheduleStartView.setText(BlockingEngine.getBlockStartTimeLabel(this));
         scheduleEndView.setText(BlockingEngine.getBlockEndTimeLabel(this));
         countdownView.setText(BlockingEngine.getCountdownLabel(this));
-
-        openLastPuff.setOnClickListener(view -> {
-            Intent launch = getPackageManager().getLaunchIntentForPackage(getPackageName());
-            if (launch != null) {
-                launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-                startActivity(launch);
-            }
-            finishOverlay();
-        });
 
         goHome.setOnClickListener(view -> {
             Intent home = new Intent(Intent.ACTION_MAIN);

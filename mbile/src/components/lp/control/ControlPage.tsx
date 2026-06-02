@@ -172,7 +172,6 @@ function PermissionWizard({
   onComplete: () => void;
 }) {
   const [started, setStarted] = useState(false);
-  const [hasTriedAccessibility, setHasTriedAccessibility] = useState(false);
   
   const nextStep = (() => {
     if (!open) {
@@ -188,11 +187,13 @@ function PermissionWizard({
       return "restricted" as PermissionWizardStep;
     }
     if (!status.accessibilityEnabled || !status.accessibilityActive) {
-      // Two-phase accessibility: first try settings, then if still disabled, go to app info
-      if (!hasTriedAccessibility) {
-        return "accessibility" as PermissionWizardStep;
+      // State machine based on actual permission state, not stale flags:
+      // If restricted settings is NOT allowed, need to fix permission first
+      // If restricted settings IS allowed, just need to enable accessibility
+      if (!status.restrictedSettingsAllowed) {
+        return "accessibility-permission-required" as PermissionWizardStep;
       }
-      return "accessibility-permission-required" as PermissionWizardStep;
+      return "accessibility" as PermissionWizardStep;
     }
     if (!status.usageAccessGranted) {
       return "usage" as PermissionWizardStep;
@@ -252,7 +253,6 @@ function PermissionWizard({
   useEffect(() => {
     if (!open) {
       setStarted(false);
-      setHasTriedAccessibility(false);
     }
   }, [open]);
 
@@ -278,7 +278,6 @@ function PermissionWizard({
       return;
     }
     if (nextStep === "accessibility") {
-      setHasTriedAccessibility(true);
       void openNativeAccessibilitySettings();
       setTimeout(() => onRefresh(), 500);
       return;

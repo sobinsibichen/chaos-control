@@ -36,6 +36,9 @@ public class ProtectionForegroundService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
+        // Create all notification channels on app start
+        NotificationChannelManager.createAllChannels(this);
+        // Also maintain the default channel for backward compatibility
         createNotificationChannel();
     }
 
