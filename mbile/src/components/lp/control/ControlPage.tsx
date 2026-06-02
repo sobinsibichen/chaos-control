@@ -230,7 +230,7 @@ function PermissionWizard({
     },
     accessibility: {
       title: "Enable Accessibility Service",
-      description: "Last Puff needs access to monitor apps on your device.",
+      description: "Click Open Accessibility and just come back here. If Android blocks it, Last Puff will show the fix next.",
       primary: "Open Accessibility",
       secondary: "Re-check permissions",
     },
@@ -267,7 +267,14 @@ function PermissionWizard({
     return null;
   }
 
-  const activeConfig = stepConfig[nextStep];
+  const activeConfig =
+    nextStep === "accessibility" && accessibilityAttempted && status?.restrictedSettingsAllowed
+      ? {
+          ...stepConfig.accessibility,
+          description: "Restricted Settings is allowed now. Tap below to go to the Accessibility page and enable Last Puff.",
+          primary: "Go to Accessibility Page",
+        }
+      : stepConfig[nextStep];
 
   const handlePrimary = () => {
     if (nextStep === "intro") {

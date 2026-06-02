@@ -9,13 +9,11 @@ import type { InsightsTab } from "./InsightsState";
 const RoastTab = lazy(async () => ({ default: (await import("./RoastContent")).RoastContent }));
 const SmokeDnaTab = lazy(async () => ({ default: (await import("./SmokeDnaPanel")).SmokeDnaPanel }));
 const CravingAiTab = lazy(async () => ({ default: (await import("./CravingAiPanel")).CravingAiPanel }));
-const VoiceTab = lazy(async () => ({ default: (await import("./VoicePanel")).VoicePanel }));
 
 const tabs: Array<{ key: InsightsTab; label: string }> = [
   { key: "Roast", label: "Overview" },
   { key: "Smoke DNA", label: "Pattern" },
   { key: "Craving AI", label: "Prediction" },
-  { key: "Voice", label: "Assistant" },
 ];
 
 class InsightsTabErrorBoundary extends Component<{ tabName: InsightsTab; children: ReactNode }, { hasError: boolean }> {
@@ -131,7 +129,7 @@ export function InsightsHub({ initialTab = "Roast" }: { initialTab?: InsightsTab
 
       <div className="sticky top-4 z-20 mb-6">
         <div className="bg-transparent">
-          <div className="grid grid-cols-4 gap-2">
+          <div className="grid grid-cols-3 gap-3">
             {tabs.map((tab) => {
               const active = activeTab === tab.key;
               return (
@@ -188,16 +186,6 @@ export function InsightsHub({ initialTab = "Roast" }: { initialTab?: InsightsTab
                   data={data}
                   dangerousWindow={dangerousWindow}
                 />
-              </Suspense>
-            </InsightsTabErrorBoundary>
-          </div>
-        ) : null}
-
-        {loadedTabs.Voice ? (
-          <div className={activeTab === "Voice" ? "block" : "hidden"}>
-            <InsightsTabErrorBoundary tabName="Voice">
-              <Suspense fallback={<TabSkeleton />}>
-                <VoiceTab data={data} activeTab={activeTab} onTabChange={setActiveTab} />
               </Suspense>
             </InsightsTabErrorBoundary>
           </div>
