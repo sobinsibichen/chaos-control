@@ -33,6 +33,11 @@ const levelDefinitions = [
 ];
 
 async function ensureAchievementDefinitions(client) {
+  const existing = await client.query("SELECT 1 FROM public.achievements LIMIT 1");
+  if (existing.rows.length) {
+    return false;
+  }
+
   const values = [];
   const placeholders = achievementDefinitions.map((achievement, index) => {
     const offset = index * 12;
@@ -76,9 +81,15 @@ async function ensureAchievementDefinitions(client) {
       `,
     values,
   );
+  return true;
 }
 
 async function ensureLevelDefinitions(client) {
+  const existing = await client.query("SELECT 1 FROM public.levels LIMIT 1");
+  if (existing.rows.length) {
+    return false;
+  }
+
   const values = [];
   const placeholders = levelDefinitions.map((level, index) => {
     const offset = index * 4;
@@ -98,6 +109,7 @@ async function ensureLevelDefinitions(client) {
       `,
     values,
   );
+  return true;
 }
 
 function toNumber(value, fallback = 0) {

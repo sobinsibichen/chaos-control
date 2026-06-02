@@ -4,7 +4,7 @@ const findUserByEmail = async (email) => {
   const query = `
     SELECT id, name, email, password, cigarette_price, visibility_enabled, created_at
     FROM public.users
-    WHERE email = $1
+    WHERE LOWER(email) = LOWER($1)
   `;
 
   const { rows } = await pool.query(query, [email]);
@@ -18,7 +18,6 @@ const createUser = async ({ name, email, password }) => {
     RETURNING id, name, email, cigarette_price, visibility_enabled, created_at
   `;
 
-  console.log("Executing signup INSERT query for email:", email);
   const { rows } = await pool.query(query, [name, email, password]);
   return rows[0];
 };

@@ -8,6 +8,7 @@ import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Intent;
 import android.content.pm.ServiceInfo;
+import android.graphics.BitmapFactory;
 import android.os.Build;
 import android.os.IBinder;
 import android.util.Log;
@@ -120,9 +121,10 @@ public class ProtectionForegroundService extends Service {
         String status = BlockingEngine.isWithinBlockedWindow(this) ? "Blocking active" : "Watching schedule";
 
         return new NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.ic_last_puff_notification)
+            .setLargeIcon(BitmapFactory.decodeResource(getResources(), R.mipmap.ic_launcher))
             .setContentTitle("Last Puff protection running")
-            .setContentText(blockWindow + " • " + status)
+            .setContentText(blockWindow + " - " + status)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)

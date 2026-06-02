@@ -447,4 +447,5 @@ async function ensureSchema() {
 module.exports = {
   ensureSchema,
   ensureLegacySchema,
+  runMigrations,
 };

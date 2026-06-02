@@ -25,6 +25,7 @@ const { getBooleanEnv, getRequiredEnv, requireProductionEnv } = require("./utils
 const app = express();
 const port = process.env.PORT || 5000;
 const server = http.createServer(app);
+const isProduction = process.env.NODE_ENV === "production";
 const defaultAllowedOrigins = [
   "https://chaos-control-api.onrender.com",
   "https://chaos-control-central.onrender.com",
@@ -91,7 +92,14 @@ app.use((req, res, next) => {
   res.on("finish", () => {
     const durationMs = Math.round(Number(process.hrtime.bigint() - startedAt) / 1e6);
     const bytes = Number(res.getHeader("Content-Length") || 0);
-    const level = durationMs > Number(process.env.API_SLOW_RESPONSE_MS || 250) ? "warn" : "info";
+    const slowThresholdMs = Number(process.env.API_SLOW_RESPONSE_MS || (isProduction ? 1000 : 250));
+    const slow = durationMs > slowThresholdMs;
+    const hasErrorStatus = res.statusCode >= 500;
+    if (isProduction && !slow && !hasErrorStatus) {
+      return;
+    }
+
+    const level = slow || hasErrorStatus ? "warn" : "info";
     const dbTrace = getDbTrace();
     console[level]("[perf:api]", JSON.stringify({
       method: req.method,
@@ -101,8 +109,9 @@ app.use((req, res, next) => {
       bytes,
       dbQueryCount: dbTrace?.queryCount || 0,
       dbDurationMs: dbTrace?.totalDurationMs || 0,
-      duplicateDbQueries: dbTrace?.duplicates || [],
-      slow: durationMs > Number(process.env.API_SLOW_RESPONSE_MS || 250),
+      duplicateDbQueries: isProduction ? undefined : dbTrace?.duplicates || [],
+      slow,
+      thresholdMs: slowThresholdMs,
     }));
   });
   next();
@@ -162,19 +171,13 @@ app.get("/api/test", (req, res) => {
   });
 });
 
-app.get("/api/health", async (req, res, next) => {
-  try {
-    const result = await pool.query("SELECT NOW() AS database_time");
-
-    res.status(200).json({
-      success: true,
-      status: "healthy",
-      uptimeSeconds: Math.round(process.uptime()),
-      databaseTime: result.rows[0].database_time,
-    });
-  } catch (error) {
-    next(error);
-  }
+app.get("/api/health", (req, res) => {
+  res.status(200).json({
+    success: true,
+    status: "healthy",
+    uptimeSeconds: Math.round(process.uptime()),
+    timestamp: new Date().toISOString(),
+  });
 });
 
 app.use("/api/auth", authRoutes);
@@ -230,13 +233,17 @@ const startServer = async () => {
       setTimeout(async () => {
         const startedAt = process.hrtime.bigint();
         try {
-          if (getBooleanEnv("RUN_STARTUP_MIGRATIONS", true)) {
+          if (getBooleanEnv("RUN_STARTUP_MIGRATIONS", false)) {
             await ensureSchema();
           }
-          await pool.query("SELECT 1");
+          if (getBooleanEnv("RUN_STARTUP_DB_PING", false)) {
+            await pool.query("SELECT 1");
+          }
           console.info("[perf:startup:background]", {
             durationMs: Math.round(Number(process.hrtime.bigint() - startedAt) / 1e6),
             status: "ready",
+            startupMigrationsEnabled: getBooleanEnv("RUN_STARTUP_MIGRATIONS", false),
+            startupDbPingEnabled: getBooleanEnv("RUN_STARTUP_DB_PING", false),
           });
         } catch (error) {
           console.error("Background initialization failed:", error.message);

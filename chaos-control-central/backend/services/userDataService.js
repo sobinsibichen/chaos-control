@@ -1383,9 +1383,36 @@ async function addBlockedApp(userId, payload) {
   const warningMessage = String(payload.warningMessage || "Protected by Last Puff.").trim();
   const { rows } = await pool.query(
     `
-      INSERT INTO public.blocked_apps (user_id, app_name, package_name, app_icon, warning_message, is_active, created_at)
-      VALUES ($1, $2, $3, $4, $5, TRUE, NOW())
-      RETURNING id, app_name, package_name, app_icon, warning_message, is_active, created_at
+      WITH existing AS (
+        SELECT id
+        FROM public.blocked_apps
+        WHERE user_id = $1 AND (
+          ($3::varchar IS NOT NULL AND package_name = $3)
+          OR LOWER(app_name) = LOWER($2)
+        )
+        ORDER BY id
+        LIMIT 1
+      ),
+      updated AS (
+        UPDATE public.blocked_apps
+        SET
+          app_name = $2,
+          package_name = $3,
+          app_icon = $4,
+          warning_message = $5,
+          is_active = TRUE
+        WHERE id = (SELECT id FROM existing)
+        RETURNING id, app_name, package_name, app_icon, warning_message, is_active, created_at
+      ),
+      inserted AS (
+        INSERT INTO public.blocked_apps (user_id, app_name, package_name, app_icon, warning_message, is_active, created_at)
+        SELECT $1, $2, $3, $4, $5, TRUE, NOW()
+        WHERE NOT EXISTS (SELECT 1 FROM existing)
+        RETURNING id, app_name, package_name, app_icon, warning_message, is_active, created_at
+      )
+      SELECT * FROM updated
+      UNION ALL
+      SELECT * FROM inserted
     `,
     [userId, appName, packageName, appIcon, warningMessage],
   );

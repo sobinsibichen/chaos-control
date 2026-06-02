@@ -18,6 +18,12 @@ const pool = new Pool({
 });
 
 const queryTraceStorage = new AsyncLocalStorage();
+const wrappedClientQuery = Symbol("lastPuffWrappedClientQuery");
+const isProduction = process.env.NODE_ENV === "production";
+const slowQueryThresholdMs = Number(
+  process.env.DB_SLOW_QUERY_MS || (isProduction ? 750 : 100),
+);
+const logNormalQueries = !isProduction && process.env.DB_LOG_QUERIES === "true";
 
 function normalizeSql(sql) {
   return String(sql || "")
@@ -27,9 +33,9 @@ function normalizeSql(sql) {
 }
 
 function logQueryTiming(sql, durationMs, rowCount, error) {
+  const normalized = normalizeSql(sql);
   const trace = queryTraceStorage.getStore();
   if (trace) {
-    const normalized = normalizeSql(sql);
     trace.queries.push({
       sql: normalized,
       durationMs: Math.round(durationMs),
@@ -39,12 +45,18 @@ function logQueryTiming(sql, durationMs, rowCount, error) {
     trace.counts.set(normalized, (trace.counts.get(normalized) || 0) + 1);
   }
 
-  const level = error || durationMs > Number(process.env.DB_SLOW_QUERY_MS || 50) ? "warn" : "info";
+  const slow = durationMs >= slowQueryThresholdMs;
+  if (!error && !slow && !logNormalQueries) {
+    return;
+  }
+
+  const level = error || slow ? "warn" : "info";
   console[level]("[perf:db]", {
     durationMs,
     rowCount,
-    slow: durationMs > Number(process.env.DB_SLOW_QUERY_MS || 50),
-    sql: normalizeSql(sql),
+    slow,
+    thresholdMs: slowQueryThresholdMs,
+    sql: normalized,
     error: error ? error.message : undefined,
   });
 }
@@ -94,6 +106,10 @@ pool.connect = async (...args) => {
   }
 
   const client = await originalConnect(...args);
+  if (client[wrappedClientQuery]) {
+    return client;
+  }
+
   const originalClientQuery = client.query.bind(client);
   client.query = async (...queryArgs) => {
     if (typeof queryArgs[queryArgs.length - 1] === "function") {
@@ -112,19 +128,11 @@ pool.connect = async (...args) => {
       throw error;
     }
   };
+  client[wrappedClientQuery] = true;
   return client;
 };
-
-pool.connect((err, client, release) => {
-  if (err) {
-    console.error("Database connection failed:", err.message);
-    return;
-  }
-
-  console.log("Supabase PostgreSQL connected successfully");
-  release();
-});
 
 module.exports = pool;
 module.exports.withDbTrace = withDbTrace;
 module.exports.getDbTrace = getDbTrace;
+module.exports.slowQueryThresholdMs = slowQueryThresholdMs;
