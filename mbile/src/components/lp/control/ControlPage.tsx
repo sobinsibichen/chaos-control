@@ -37,7 +37,6 @@ import {
   openNativeOverlaySettings,
   openNativeUsageAccessSettings,
   relockNativeProtection,
-  requestNativeBatteryOptimizationExemption,
   syncNativeProtectionConfig,
   type NativeInstalledApp,
   type NativeProtectionStatus,
@@ -150,15 +149,16 @@ function isProtectionReady(status: NativeProtectionStatus | null) {
   }
 
   return (
-    status.accessibilityActive &&
     status.usageAccessGranted &&
+    status.restrictedSettingsAllowed &&
+    status.accessibilityEnabled &&
+    status.accessibilityActive &&
     status.overlayPermissionGranted &&
-    status.batteryOptimizationIgnored &&
     status.scheduleActive
   );
 }
 
-type PermissionWizardStep = "intro" | "restricted" | "accessibility" | "usage" | "overlay" | "battery" | "done";
+type PermissionWizardStep = "intro" | "restricted" | "accessibility" | "usage" | "overlay" | "done";
 
 function PermissionWizard({
   status,
@@ -172,7 +172,6 @@ function PermissionWizard({
   onComplete: () => void;
 }) {
   const [started, setStarted] = useState(false);
-  const [restrictedSettingsReviewed, setRestrictedSettingsReviewed] = useState(false);
   const nextStep = (() => {
     if (!open) {
       return "done" as PermissionWizardStep;
@@ -183,7 +182,7 @@ function PermissionWizard({
     if (!status) {
       return "intro" as PermissionWizardStep;
     }
-    if (status.restrictedSettingsRequired && !restrictedSettingsReviewed) {
+    if (status.restrictedSettingsRequired || !status.restrictedSettingsAllowed) {
       return "restricted" as PermissionWizardStep;
     }
     if (!status.accessibilityEnabled || !status.accessibilityActive) {
@@ -194,9 +193,6 @@ function PermissionWizard({
     }
     if (!status.overlayPermissionGranted) {
       return "overlay" as PermissionWizardStep;
-    }
-    if (!status.batteryOptimizationIgnored) {
-      return "battery" as PermissionWizardStep;
     }
     return "done" as PermissionWizardStep;
   })();
@@ -210,19 +206,18 @@ function PermissionWizard({
   const stepConfig: Record<PermissionWizardStep, { title: string; description: string; primary: string; secondary?: string }> = {
     intro: {
       title: "Last Puff needs permissions to protect your focus",
-      description: "We'll open the exact Android screens and move forward as soon as each permission is granted.",
+      description: "We'll open the closest Android settings screens and refresh automatically when you return.",
       primary: "Start Setup",
     },
     restricted: {
       title: "Allow Restricted Settings",
-      description: "To let Last Puff block distracting apps, Android requires one extra approval.",
+      description: "This device blocks accessibility services for sideloaded apps. Tap below and enable \"Allow Restricted Settings\".",
       primary: "Open App Info",
     },
     accessibility: {
       title: "Enable Accessibility",
-      description: "This lets Last Puff detect the foreground app and block it instantly.",
-      primary: "Enable Protection",
-      secondary: "Open Accessibility",
+      description: "Open Accessibility, then choose Installed Services and Last Puff.",
+      primary: "Open Accessibility",
     },
     usage: {
       title: "Allow Usage Access",
@@ -230,17 +225,12 @@ function PermissionWizard({
       primary: "Open Usage Access",
     },
     overlay: {
-      title: "Allow Overlay Permission",
+      title: "Allow Display Over Other Apps",
       description: "This shows the full-screen blocker whenever a protected app opens.",
       primary: "Open Overlay Settings",
     },
-    battery: {
-      title: "Disable Battery Optimization",
-      description: "This keeps blocking reliable in the background, after reboot, and during battery saver modes.",
-      primary: "Disable Battery Optimization",
-    },
     done: {
-      title: "Protection Ready",
+      title: "Protection Active",
       description: "All required permissions are active. Last Puff can monitor and block continuously now.",
       primary: "Continue",
     },
@@ -249,7 +239,6 @@ function PermissionWizard({
   useEffect(() => {
     if (!open) {
       setStarted(false);
-      setRestrictedSettingsReviewed(false);
     }
   }, [open]);
 
@@ -270,7 +259,6 @@ function PermissionWizard({
       return;
     }
     if (nextStep === "restricted") {
-      setRestrictedSettingsReviewed(true);
       void openNativeAppInfo();
       onRefresh();
       return;
@@ -287,18 +275,14 @@ function PermissionWizard({
       void openNativeOverlaySettings();
       return;
     }
-    if (nextStep === "battery") {
-      void requestNativeBatteryOptimizationExemption().then(onRefresh).catch(() => {});
-    }
   };
 
-  const handleSecondary = () => {
-    if (nextStep === "restricted") {
-      void openNativeAccessibilitySettings();
-    } else if (nextStep === "accessibility") {
-      void openNativeAccessibilitySettings();
-    }
-  };
+  const permissionRows = [
+    ["Usage Access", Boolean(status?.usageAccessGranted)],
+    ["Restricted Settings", Boolean(status?.restrictedSettingsAllowed)],
+    ["Accessibility", Boolean(status?.accessibilityEnabled && status?.accessibilityActive)],
+    ["Display Over Other Apps", Boolean(status?.overlayPermissionGranted)],
+  ] as const;
 
   return (
     <motion.div
@@ -316,6 +300,7 @@ function PermissionWizard({
 
             {nextStep === "restricted" ? (
               <div className="mt-4 rounded-2xl border border-foreground/10 bg-card p-4 text-sm text-foreground">
+                <div className="mb-3 font-semibold">Step 1</div>
                 <ol className="space-y-2">
                   <li>1. Open App Info</li>
                   <li>2. Tap the 3 dots</li>
@@ -331,37 +316,19 @@ function PermissionWizard({
               >
                 {activeConfig.primary}
               </button>
-              {activeConfig.secondary ? (
-                <button
-                  onClick={handleSecondary}
-                  className="rounded-2xl border border-foreground/10 bg-background px-4 py-3 text-sm font-semibold text-foreground shadow-sm"
-                >
-                  {activeConfig.secondary}
-                </button>
-              ) : (
-                <button
-                  onClick={() => {
-                    if (nextStep === "restricted") {
-                      setRestrictedSettingsReviewed(true);
-                    }
-                    onRefresh();
-                  }}
-                  className="rounded-2xl border border-foreground/10 bg-background px-4 py-3 text-sm font-semibold text-foreground shadow-sm"
-                >
-                  Re-check permissions
-                </button>
-              )}
+              <button
+                onClick={onRefresh}
+                className="rounded-2xl border border-foreground/10 bg-background px-4 py-3 text-sm font-semibold text-foreground shadow-sm"
+              >
+                Re-check permissions
+              </button>
             </div>
 
             <div className="mt-5 grid gap-3">
-              {[
-                ["Protection Ready", isProtectionReady(status)],
-                ["Permissions Missing", !isProtectionReady(status)],
-                ["Protection Active", Boolean(status?.accessibilityActive && status?.scheduleActive && status?.blockingActive)],
-              ].map(([label, active]) => (
+              {permissionRows.map(([label, active]) => (
                 <div key={label as string} className="flex items-center justify-between rounded-2xl border border-foreground/10 bg-background px-4 py-3">
                   <div className="text-sm font-semibold text-foreground">{label as string}</div>
-                  <div className={`text-xs font-semibold ${active ? "text-emerald-600" : "text-muted-foreground"}`}>{active ? "Ready" : "Pending"}</div>
+                  <div className={`text-sm font-semibold ${active ? "text-emerald-600" : "text-rose-600"}`}>{active ? "✓" : "✗"}</div>
                 </div>
               ))}
             </div>

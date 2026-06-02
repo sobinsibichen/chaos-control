@@ -10,7 +10,7 @@ import { GlassCard } from "@/components/lp/GlassCard";
 import { StatTile } from "@/components/lp/StatTile";
 import { apiRequest } from "@/lib/api";
 import { appStore, useAppStore } from "@/lib/app-store";
-import { readLocalQueryCache, writeLocalQueryCache } from "@/lib/local-query-cache";
+import { readLocalQueryCache, userLocalQueryCacheKey, writeLocalQueryCache } from "@/lib/local-query-cache";
 import { queryCacheTimes } from "@/lib/query-cache";
 import { queryKeys } from "@/lib/query-keys";
 import { sampleMemory, useRenderCounter, useScreenPerformance } from "@/lib/performance";
@@ -108,6 +108,7 @@ export function DashboardPage() {
   useRenderCounter("DashboardPage");
   const queryClient = useQueryClient();
   const user = useAppStore((value) => value.auth.user);
+  const userId = user?.id;
   const hydrated = useAppStore((value) => value.meta.hydrated);
   const isAuthenticated = useAppStore((value) => value.auth.isAuthenticated);
   const [errorMessage, setErrorMessage] = useState("");
@@ -118,30 +119,35 @@ export function DashboardPage() {
   const previousLevelRef = useRef<number | null>(null);
   useBodyScrollLock(quitStep > 0 || Boolean(popup));
   const cachedDashboardQuery = useMemo(
-    () => readLocalQueryCache<DashboardResponse>(DASHBOARD_CACHE_KEY, DASHBOARD_CACHE_MAX_AGE_MS),
-    [],
+    () => (userId ? readLocalQueryCache<DashboardResponse>(userLocalQueryCacheKey(DASHBOARD_CACHE_KEY, userId), DASHBOARD_CACHE_MAX_AGE_MS) : null),
+    [userId],
   );
+  const dashboardQueryKey = useMemo(() => queryKeys.dashboard(userId), [userId]);
+  const activityQueryKey = useMemo(() => queryKeys.activity(userId), [userId]);
   const dashboardQuery = useQuery({
-    queryKey: queryKeys.dashboard,
+    queryKey: dashboardQueryKey,
     queryFn: () => apiRequest<DashboardResponse>("/api/stats/dashboard"),
-    enabled: hydrated && isAuthenticated,
+    enabled: hydrated && isAuthenticated && Boolean(userId),
     refetchInterval: 60000,
     ...queryCacheTimes.dashboard,
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
+    staleTime: 0,
     initialData: cachedDashboardQuery?.data,
     initialDataUpdatedAt: cachedDashboardQuery?.updatedAt,
   });
 
   useEffect(() => {
-    if (dashboardQuery.data) {
-      writeLocalQueryCache(DASHBOARD_CACHE_KEY, dashboardQuery.data);
+    if (dashboardQuery.data && userId) {
+      writeLocalQueryCache(userLocalQueryCacheKey(DASHBOARD_CACHE_KEY, userId), dashboardQuery.data);
       if (dashboardQuery.data.activity?.length && typeof window !== "undefined") {
         const latest = dashboardQuery.data.activity.slice(0, 5);
         setCachedActivity(latest);
-        queryClient.setQueryData(queryKeys.activity, { success: true, activity: latest });
-        window.localStorage.setItem(ACTIVITY_CACHE_KEY, JSON.stringify(latest));
+        queryClient.setQueryData(activityQueryKey, { success: true, activity: latest });
+        window.localStorage.setItem(userLocalQueryCacheKey(ACTIVITY_CACHE_KEY, userId), JSON.stringify(latest));
       }
     }
-  }, [dashboardQuery.data, queryClient]);
+  }, [activityQueryKey, dashboardQuery.data, queryClient, userId]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -149,14 +155,18 @@ export function DashboardPage() {
     }
 
     try {
-      const raw = window.localStorage.getItem(ACTIVITY_CACHE_KEY);
+      if (!userId) {
+        return;
+      }
+
+      const raw = window.localStorage.getItem(userLocalQueryCacheKey(ACTIVITY_CACHE_KEY, userId));
       if (raw) {
         setCachedActivity(JSON.parse(raw) as ActivityRow[]);
       }
     } catch {
       setCachedActivity([]);
     }
-  }, []);
+  }, [userId]);
 
   const dashboard = dashboardQuery.data;
   useScreenPerformance("dashboard", Boolean(dashboard));
@@ -210,11 +220,11 @@ export function DashboardPage() {
     }),
     onMutate: async () => {
       setErrorMessage("");
-      await queryClient.cancelQueries({ queryKey: queryKeys.dashboard });
-      const previous = queryClient.getQueryData<DashboardResponse>(queryKeys.dashboard);
+      await queryClient.cancelQueries({ queryKey: dashboardQueryKey });
+      const previous = queryClient.getQueryData<DashboardResponse>(dashboardQueryKey);
 
       if (previous) {
-        queryClient.setQueryData<DashboardResponse>(queryKeys.dashboard, {
+        queryClient.setQueryData<DashboardResponse>(dashboardQueryKey, {
           ...previous,
           smokeFree: { startedAt: null, seconds: 0 },
           streak: { ...previous.streak, current: 0 },
@@ -231,15 +241,15 @@ export function DashboardPage() {
     },
     onError: (error, _variables, context) => {
       if (context?.previous) {
-        queryClient.setQueryData(queryKeys.dashboard, context.previous);
+        queryClient.setQueryData(dashboardQueryKey, context.previous);
       }
       setErrorMessage(error instanceof Error ? error.message : "Unable to log cigarette.");
     },
     onSettled: () => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.dashboard });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.activity });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.profile });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.analytics });
+      void queryClient.invalidateQueries({ queryKey: dashboardQueryKey });
+      void queryClient.invalidateQueries({ queryKey: activityQueryKey });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.profile(userId) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.analytics(userId) });
     },
   });
 
@@ -251,11 +261,11 @@ export function DashboardPage() {
       }),
     onMutate: async () => {
       setErrorMessage("");
-      await queryClient.cancelQueries({ queryKey: queryKeys.dashboard });
-      const previous = queryClient.getQueryData<DashboardResponse>(queryKeys.dashboard);
+      await queryClient.cancelQueries({ queryKey: dashboardQueryKey });
+      const previous = queryClient.getQueryData<DashboardResponse>(dashboardQueryKey);
 
       if (previous) {
-        queryClient.setQueryData<DashboardResponse>(queryKeys.dashboard, {
+        queryClient.setQueryData<DashboardResponse>(dashboardQueryKey, {
           ...previous,
           smokeFree: { startedAt: new Date().toISOString(), seconds: 0 },
           streak: { ...previous.streak, current: 0 },
@@ -266,14 +276,14 @@ export function DashboardPage() {
     },
     onError: (error, _variables, context) => {
       if (context?.previous) {
-        queryClient.setQueryData(queryKeys.dashboard, context.previous);
+        queryClient.setQueryData(dashboardQueryKey, context.previous);
       }
       setErrorMessage(error instanceof Error ? error.message : "Unable to start quit attempt.");
     },
     onSuccess: (response) => {
       const nextDashboard = response.dashboard;
       if (nextDashboard) {
-        queryClient.setQueryData<DashboardResponse>(queryKeys.dashboard, nextDashboard);
+        queryClient.setQueryData<DashboardResponse>(dashboardQueryKey, nextDashboard);
         appStore.updateUser({
           id: nextDashboard.user.id,
           username: nextDashboard.user.name,
@@ -286,10 +296,10 @@ export function DashboardPage() {
       setQuitStep(0);
     },
     onSettled: () => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.dashboard });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.activity });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.profile });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.analytics });
+      void queryClient.invalidateQueries({ queryKey: dashboardQueryKey });
+      void queryClient.invalidateQueries({ queryKey: activityQueryKey });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.profile(userId) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.analytics(userId) });
     },
   });
 
@@ -320,6 +330,29 @@ export function DashboardPage() {
         : "Quiet day. Keep the streak gentle and alive.";
 
   const activity = (dashboard?.activity?.length ? dashboard.activity : cachedActivity).slice(0, 5);
+
+  if (!dashboard && (dashboardQuery.isLoading || dashboardQuery.isFetching)) {
+    return (
+      <AppShell>
+        <div className="mb-8">
+          <div className="h-5 w-32 animate-pulse rounded-full bg-foreground/10" />
+          <div className="mt-3 h-4 w-24 animate-pulse rounded-full bg-foreground/10" />
+        </div>
+        <GlassCard glow="orange" className="mb-6">
+          <div className="h-6 w-40 animate-pulse rounded-full bg-foreground/10" />
+          <div className="mt-6 grid grid-cols-2 gap-3">
+            <div className="h-32 animate-pulse rounded-2xl bg-foreground/10" />
+            <div className="h-32 animate-pulse rounded-2xl bg-foreground/10" />
+          </div>
+        </GlassCard>
+        <div className="grid grid-cols-2 gap-3">
+          {Array.from({ length: 6 }, (_, index) => (
+            <div key={index} className="h-24 animate-pulse rounded-2xl border border-foreground/10 bg-card" />
+          ))}
+        </div>
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell>

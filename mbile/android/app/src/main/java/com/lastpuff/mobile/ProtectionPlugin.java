@@ -119,11 +119,17 @@ public class ProtectionPlugin extends Plugin {
 
     @PluginMethod
     public void getStatus(PluginCall call) {
+        if (BlockingEngine.hasRequiredBlockingPermissions(getContext()) && BlockingEngine.isProtectionScheduleActive(getContext())) {
+            BlockingEngine.syncProtection(getContext());
+        }
         call.resolve(buildStatus());
     }
 
     @PluginMethod
     public void getDebugStatus(PluginCall call) {
+        if (BlockingEngine.hasRequiredBlockingPermissions(getContext()) && BlockingEngine.isProtectionScheduleActive(getContext())) {
+            BlockingEngine.syncProtection(getContext());
+        }
         call.resolve(buildStatus());
     }
 
@@ -222,6 +228,7 @@ public class ProtectionPlugin extends Plugin {
         BlockingScheduleEntity schedule = BlockingRepository.getSchedule(getContext());
         boolean accessibilityEnabled = BlockingEngine.isAccessibilityServiceEnabled(getContext());
         boolean accessibilityActive = BlockingEngine.isAccessibilityActive(getContext());
+        boolean restrictedSettingsAllowed = BlockingEngine.isRestrictedSettingsAllowed(getContext());
         JSObject status = new JSObject();
         status.put("accessibilityEnabled", accessibilityEnabled);
         status.put("accessibilityActive", accessibilityActive);
@@ -232,7 +239,8 @@ public class ProtectionPlugin extends Plugin {
         status.put("scheduleActive", BlockingEngine.isProtectionScheduleActive(getContext()));
         status.put("blockingActive", BlockingEngine.isWithinBlockedWindow(getContext()) && !BlockingRepository.isUnlockedForToday(getContext()));
         status.put("batteryOptimizationIgnored", BlockingEngine.isBatteryOptimizationIgnored(getContext()));
-        status.put("restrictedSettingsRequired", Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !accessibilityEnabled && !accessibilityActive);
+        status.put("restrictedSettingsAllowed", restrictedSettingsAllowed);
+        status.put("restrictedSettingsRequired", !restrictedSettingsAllowed);
         status.put("blockTime", BlockingRepository.getBlockWindowLabel(getContext()));
         status.put("blockHour", schedule.blockHour);
         status.put("blockMinute", schedule.blockMinute);

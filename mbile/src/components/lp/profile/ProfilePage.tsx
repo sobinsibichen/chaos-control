@@ -98,6 +98,7 @@ const roadmapPath = `
 export default function ProfilePage() {
   const queryClient = useQueryClient();
   const authUser = useAppStore((value) => value.auth.user);
+  const userId = authUser?.id;
   const [draftPrice, setDraftPrice] = useState(authUser?.cigarettePrice?.toString() || "20");
   const [draftAverage, setDraftAverage] = useState("10");
   const [errorMessage, setErrorMessage] = useState("");
@@ -105,8 +106,13 @@ export default function ProfilePage() {
   const [pointsGuideOpen, setPointsGuideOpen] = useState(false);
 
   const profileQuery = useQuery({
-    queryKey: queryKeys.profile,
+    queryKey: queryKeys.profile(userId),
     queryFn: () => apiRequest<{ success: boolean; profile: ProfilePayload }>("/api/profile"),
+    enabled: Boolean(userId),
+    ...queryCacheTimes.profile,
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
+    staleTime: 0,
   });
 
   const profile = profileQuery.data?.profile;
@@ -162,10 +168,10 @@ export default function ProfilePage() {
       appStore.updateUser({
         cigarettePrice: nextProfile.user.cigarettePrice,
       });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.profile });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.dashboard });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.analytics });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.achievements });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.profile(userId) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.dashboard(userId) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.analytics(userId) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.achievements(userId) });
     },
     onError: (error) => {
       setSuccessMessage("");
@@ -217,6 +223,31 @@ export default function ProfilePage() {
       })),
     [currentLevel],
   );
+
+  if (!profile && (profileQuery.isLoading || profileQuery.isFetching)) {
+    return (
+      <AppShell>
+        <div className="mb-8">
+          <div className="h-4 w-20 animate-pulse rounded-full bg-foreground/10" />
+          <div className="mt-3 h-7 w-40 animate-pulse rounded-full bg-foreground/10" />
+        </div>
+        <GlassCard className="mb-6">
+          <div className="flex items-center gap-4">
+            <div className="h-16 w-16 animate-pulse rounded-[1.35rem] bg-foreground/10" />
+            <div className="flex-1">
+              <div className="h-5 w-36 animate-pulse rounded-full bg-foreground/10" />
+              <div className="mt-3 h-4 w-48 animate-pulse rounded-full bg-foreground/10" />
+            </div>
+          </div>
+        </GlassCard>
+        <div className="grid grid-cols-2 gap-3">
+          {Array.from({ length: 4 }, (_, index) => (
+            <div key={index} className="h-24 animate-pulse rounded-2xl border border-foreground/10 bg-card" />
+          ))}
+        </div>
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell>

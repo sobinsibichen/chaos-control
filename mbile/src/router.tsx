@@ -8,10 +8,11 @@ export const getRouter = () => {
     defaultOptions: {
       queries: {
         retry: 2,
-        staleTime: queryCacheTimes.dashboard.staleTime,
+        staleTime: 0,
         gcTime: queryCacheTimes.dashboard.gcTime,
-        refetchOnWindowFocus: false,
-        refetchOnMount: false,
+        refetchOnWindowFocus: true,
+        refetchOnMount: true,
+        refetchOnReconnect: true,
       },
       mutations: {
         retry: 1,

@@ -46,3 +46,7 @@ export function writeLocalQueryCache<T>(key: string, data: T) {
     // Best-effort cache only. Private mode or quota failures should not affect app flow.
   }
 }
+
+export function userLocalQueryCacheKey(baseKey: string, userId: string | number | null | undefined) {
+  return `${baseKey}:${String(userId ?? "anonymous")}`;
+}

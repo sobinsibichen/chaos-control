@@ -50,6 +50,7 @@ export interface NativeProtectionStatus {
   scheduleActive: boolean;
   blockingActive: boolean;
   batteryOptimizationIgnored: boolean;
+  restrictedSettingsAllowed: boolean;
   restrictedSettingsRequired: boolean;
   withinBlockedWindow: boolean;
   unlockedForToday: boolean;

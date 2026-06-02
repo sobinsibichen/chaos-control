@@ -53,6 +53,11 @@ public final class BlockingEngine {
             return false;
         }
 
+        if (!hasRequiredBlockingPermissions(context)) {
+            Log.w(TAG, "Blocking skipped until required permissions are granted");
+            return false;
+        }
+
         CachedSchedule schedule = getCachedSchedule(context);
         if (!schedule.enabled || schedule.unlockedForToday) {
             return false;
@@ -129,8 +134,51 @@ public final class BlockingEngine {
         return mode == android.app.AppOpsManager.MODE_ALLOWED;
     }
 
+    public static boolean isRestrictedSettingsAllowed(Context context) {
+        if (context == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            return true;
+        }
+
+        if (isAccessibilityServiceEnabled(context)) {
+            return true;
+        }
+
+        AccessibilityManager accessibilityManager = (AccessibilityManager) context.getSystemService(Context.ACCESSIBILITY_SERVICE);
+        if (accessibilityManager == null) {
+            return false;
+        }
+
+        String expected = new ComponentName(context, com.lastpuff.mobile.services.BlockAccessibilityService.class).flattenToString();
+        for (android.accessibilityservice.AccessibilityServiceInfo serviceInfo : accessibilityManager.getInstalledAccessibilityServiceList()) {
+            if (serviceInfo == null || serviceInfo.getResolveInfo() == null || serviceInfo.getResolveInfo().serviceInfo == null) {
+                continue;
+            }
+
+            android.content.pm.ServiceInfo info = serviceInfo.getResolveInfo().serviceInfo;
+            String serviceName = new ComponentName(info.packageName, info.name).flattenToString();
+            if (expected.equalsIgnoreCase(serviceName)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public static boolean hasRequiredBlockingPermissions(Context context) {
+        return isUsageAccessGranted(context)
+            && isRestrictedSettingsAllowed(context)
+            && isAccessibilityServiceEnabled(context)
+            && isOverlayPermissionGranted(context);
+    }
+
     public static void syncProtection(Context context) {
-        startMonitoringService(context);
+        if (hasRequiredBlockingPermissions(context)) {
+            startMonitoringService(context);
+        } else {
+            Log.w(TAG, "Protection monitor not started until required permissions are granted");
+            BlockingRepository.setServiceRunning(context, false);
+            BlockingRepository.setMonitoringState(context, false, "");
+        }
         scheduleExactAlarm(context);
         BlockingRepository.setBatteryOptimizationIgnored(context, isBatteryOptimizationIgnored(context));
     }
@@ -271,6 +319,11 @@ public final class BlockingEngine {
 
     public static void launchBlockScreen(Context context, String packageName, String reason) {
         if (context == null) {
+            return;
+        }
+
+        if (!hasRequiredBlockingPermissions(context)) {
+            Log.w(TAG, "Block screen skipped until required permissions are granted");
             return;
         }
 

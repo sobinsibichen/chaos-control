@@ -4,7 +4,7 @@ import { apiRequest } from "@/lib/api";
 import { useAppStore } from "@/lib/app-store";
 import { createCravingPrediction, createFallbackCravingPrediction, fetchLiveCravingPrediction, listCravingPredictions, type CravingPredictionRecord } from "@/lib/cravingApi";
 import { createFallbackSmokeDna, createSmokeDna, listSmokeDna } from "@/lib/intelligenceApi";
-import { readLocalQueryCache, writeLocalQueryCache } from "@/lib/local-query-cache";
+import { readLocalQueryCache, userLocalQueryCacheKey, writeLocalQueryCache } from "@/lib/local-query-cache";
 import {
   buildHeatmap,
   buildHourlyCravingData,
@@ -37,9 +37,9 @@ const insightsQueryOptions = {
   staleTime: 60_000,
   gcTime: 600_000,
   placeholderData: keepPreviousData,
-  refetchOnWindowFocus: false,
-  refetchOnReconnect: false,
-  refetchOnMount: false,
+  refetchOnWindowFocus: true,
+  refetchOnReconnect: true,
+  refetchOnMount: true,
 } as const;
 const insightsCacheKeys = {
   dashboard: "last-puff-insights-dashboard-cache",
@@ -57,47 +57,48 @@ export function useIntelligenceData() {
   const queryClient = useQueryClient();
   const hydrated = useAppStore((state) => state.meta.hydrated);
   const isAuthenticated = useAppStore((state) => state.auth.isAuthenticated);
-  const queriesEnabled = hydrated && isAuthenticated;
+  const userId = useAppStore((state) => state.auth.user?.id);
+  const queriesEnabled = hydrated && isAuthenticated && Boolean(userId);
   const smokeDnaBootstrappedRef = useRef(false);
   const cravingBootstrappedRef = useRef(false);
   const now = new Date();
   const currentYear = now.getFullYear();
   const currentMonth = now.getMonth() + 1;
   const cachedDashboard = useMemo(
-    () => readLocalQueryCache<{ success: boolean } & DashboardPayload>(insightsCacheKeys.dashboard, INSIGHTS_CACHE_MAX_AGE_MS),
-    [],
+    () => (userId ? readLocalQueryCache<{ success: boolean } & DashboardPayload>(userLocalQueryCacheKey(insightsCacheKeys.dashboard, userId), INSIGHTS_CACHE_MAX_AGE_MS) : null),
+    [userId],
   );
   const cachedAnalytics = useMemo(
-    () => readLocalQueryCache<{ success: boolean; analytics: RoastAnalyticsPayload }>(insightsCacheKeys.analytics, INSIGHTS_CACHE_MAX_AGE_MS),
-    [],
+    () => (userId ? readLocalQueryCache<{ success: boolean; analytics: RoastAnalyticsPayload }>(userLocalQueryCacheKey(insightsCacheKeys.analytics, userId), INSIGHTS_CACHE_MAX_AGE_MS) : null),
+    [userId],
   );
   const cachedActivity = useMemo(
-    () => readLocalQueryCache<{ success: boolean; activity: ActivityRow[] }>(insightsCacheKeys.activity, INSIGHTS_CACHE_MAX_AGE_MS),
-    [],
+    () => (userId ? readLocalQueryCache<{ success: boolean; activity: ActivityRow[] }>(userLocalQueryCacheKey(insightsCacheKeys.activity, userId), INSIGHTS_CACHE_MAX_AGE_MS) : null),
+    [userId],
   );
   const cachedSmokeDna = useMemo(
-    () => readLocalQueryCache<ReturnType<typeof createFallbackSmokeDna>>(insightsCacheKeys.smokeDna, INSIGHTS_CACHE_MAX_AGE_MS),
-    [],
+    () => (userId ? readLocalQueryCache<ReturnType<typeof createFallbackSmokeDna>>(userLocalQueryCacheKey(insightsCacheKeys.smokeDna, userId), INSIGHTS_CACHE_MAX_AGE_MS) : null),
+    [userId],
   );
   const cachedReplayHistory = useMemo(
-    () => readLocalQueryCache<Awaited<ReturnType<typeof listSmokeReplay>>>(insightsCacheKeys.replayHistory, INSIGHTS_CACHE_MAX_AGE_MS),
-    [],
+    () => (userId ? readLocalQueryCache<Awaited<ReturnType<typeof listSmokeReplay>>>(userLocalQueryCacheKey(insightsCacheKeys.replayHistory, userId), INSIGHTS_CACHE_MAX_AGE_MS) : null),
+    [userId],
   );
   const cachedMonthlyReplay = useMemo(
-    () => readLocalQueryCache<Awaited<ReturnType<typeof fetchMonthlyReplay>>>(insightsCacheKeys.monthlyReplay(currentYear, currentMonth), INSIGHTS_CACHE_MAX_AGE_MS),
-    [currentMonth, currentYear],
+    () => (userId ? readLocalQueryCache<Awaited<ReturnType<typeof fetchMonthlyReplay>>>(userLocalQueryCacheKey(insightsCacheKeys.monthlyReplay(currentYear, currentMonth), userId), INSIGHTS_CACHE_MAX_AGE_MS) : null),
+    [currentMonth, currentYear, userId],
   );
   const cachedYearlyReplay = useMemo(
-    () => readLocalQueryCache<Awaited<ReturnType<typeof fetchYearlyReplay>>>(insightsCacheKeys.yearlyReplay(currentYear), INSIGHTS_CACHE_MAX_AGE_MS),
-    [currentYear],
+    () => (userId ? readLocalQueryCache<Awaited<ReturnType<typeof fetchYearlyReplay>>>(userLocalQueryCacheKey(insightsCacheKeys.yearlyReplay(currentYear), userId), INSIGHTS_CACHE_MAX_AGE_MS) : null),
+    [currentYear, userId],
   );
   const cachedCravingHistory = useMemo(
-    () => readLocalQueryCache<Awaited<ReturnType<typeof listCravingPredictions>>>(insightsCacheKeys.cravingHistory, INSIGHTS_CACHE_MAX_AGE_MS),
-    [],
+    () => (userId ? readLocalQueryCache<Awaited<ReturnType<typeof listCravingPredictions>>>(userLocalQueryCacheKey(insightsCacheKeys.cravingHistory, userId), INSIGHTS_CACHE_MAX_AGE_MS) : null),
+    [userId],
   );
   const cachedLiveCraving = useMemo(
-    () => readLocalQueryCache<CravingPredictionRecord>(insightsCacheKeys.liveCraving, INSIGHTS_CACHE_MAX_AGE_MS),
-    [],
+    () => (userId ? readLocalQueryCache<CravingPredictionRecord>(userLocalQueryCacheKey(insightsCacheKeys.liveCraving, userId), INSIGHTS_CACHE_MAX_AGE_MS) : null),
+    [userId],
   );
 
   useEffect(() => {
@@ -133,7 +134,7 @@ export function useIntelligenceData() {
   ]);
 
   const dashboardQuery = useQuery({
-    queryKey: queryKeys.dashboard,
+    queryKey: queryKeys.dashboard(userId),
     queryFn: async () => {
       try {
         console.info("[insights-cache] GET /api/stats/dashboard via Insights queryFn; skipLoading=true.");
@@ -149,7 +150,7 @@ export function useIntelligenceData() {
   });
 
   const analyticsQuery = useQuery({
-    queryKey: queryKeys.analytics,
+    queryKey: queryKeys.analytics(userId),
     queryFn: async () => {
       try {
         console.info("[insights-cache] GET /api/analytics/roast via Insights queryFn; skipLoading=true.");
@@ -165,7 +166,7 @@ export function useIntelligenceData() {
   });
 
   const activityQuery = useQuery({
-    queryKey: queryKeys.activity,
+    queryKey: queryKeys.activity(userId),
     queryFn: async () => {
       try {
         console.info("[insights-cache] GET /api/activity/recent?limit=30 via Insights queryFn; skipLoading=true.");
@@ -181,7 +182,7 @@ export function useIntelligenceData() {
   });
 
   const smokeDnaQuery = useQuery({
-    queryKey: queryKeys.smokeDna,
+    queryKey: queryKeys.smokeDna(userId),
     queryFn: async () => {
       try {
         console.info("[insights-cache] GET /api/smoke-dna via Insights queryFn; skipLoading=true.");
@@ -197,7 +198,7 @@ export function useIntelligenceData() {
   });
 
   const replayHistoryQuery = useQuery({
-    queryKey: queryKeys.smokeReplayHistory,
+    queryKey: queryKeys.smokeReplayHistory(userId),
     queryFn: async () => {
       try {
         console.info("[insights-cache] GET /api/smoke-replay via Insights queryFn; skipLoading=true.");
@@ -213,7 +214,7 @@ export function useIntelligenceData() {
   });
 
   const monthlyReplayQuery = useQuery({
-    queryKey: queryKeys.smokeReplayMonthly(currentYear, currentMonth),
+    queryKey: queryKeys.smokeReplayMonthly(userId, currentYear, currentMonth),
     queryFn: async () => {
       try {
         console.info("[insights-cache] GET /api/smoke-replay/monthly via Insights queryFn; skipLoading=true.", { currentYear, currentMonth });
@@ -229,7 +230,7 @@ export function useIntelligenceData() {
   });
 
   const yearlyReplayQuery = useQuery({
-    queryKey: queryKeys.smokeReplayYearly(currentYear),
+    queryKey: queryKeys.smokeReplayYearly(userId, currentYear),
     queryFn: async () => {
       try {
         console.info("[insights-cache] GET /api/smoke-replay/yearly via Insights queryFn; skipLoading=true.", { currentYear });
@@ -245,7 +246,7 @@ export function useIntelligenceData() {
   });
 
   const cravingHistoryQuery = useQuery({
-    queryKey: queryKeys.cravingHistory,
+    queryKey: queryKeys.cravingHistory(userId),
     queryFn: async () => {
       try {
         console.info("[insights-cache] GET /api/craving-predictions via Insights queryFn; skipLoading=true.");
@@ -261,7 +262,7 @@ export function useIntelligenceData() {
   });
 
   const liveCravingQuery = useQuery({
-    queryKey: queryKeys.cravingLive,
+    queryKey: queryKeys.cravingLive(userId),
     queryFn: async () => {
       try {
         console.info("[insights-cache] GET /api/craving-predictions/live via Insights queryFn; skipLoading=true.");
@@ -277,15 +278,16 @@ export function useIntelligenceData() {
   });
 
   useEffect(() => {
-    if (dashboardQuery.data) writeLocalQueryCache(insightsCacheKeys.dashboard, dashboardQuery.data);
-    if (analyticsQuery.data) writeLocalQueryCache(insightsCacheKeys.analytics, analyticsQuery.data);
-    if (activityQuery.data) writeLocalQueryCache(insightsCacheKeys.activity, activityQuery.data);
-    if (smokeDnaQuery.data) writeLocalQueryCache(insightsCacheKeys.smokeDna, smokeDnaQuery.data);
-    if (replayHistoryQuery.data) writeLocalQueryCache(insightsCacheKeys.replayHistory, replayHistoryQuery.data);
-    if (monthlyReplayQuery.data) writeLocalQueryCache(insightsCacheKeys.monthlyReplay(currentYear, currentMonth), monthlyReplayQuery.data);
-    if (yearlyReplayQuery.data) writeLocalQueryCache(insightsCacheKeys.yearlyReplay(currentYear), yearlyReplayQuery.data);
-    if (cravingHistoryQuery.data) writeLocalQueryCache(insightsCacheKeys.cravingHistory, cravingHistoryQuery.data);
-    if (liveCravingQuery.data) writeLocalQueryCache(insightsCacheKeys.liveCraving, liveCravingQuery.data);
+    if (!userId) return;
+    if (dashboardQuery.data) writeLocalQueryCache(userLocalQueryCacheKey(insightsCacheKeys.dashboard, userId), dashboardQuery.data);
+    if (analyticsQuery.data) writeLocalQueryCache(userLocalQueryCacheKey(insightsCacheKeys.analytics, userId), analyticsQuery.data);
+    if (activityQuery.data) writeLocalQueryCache(userLocalQueryCacheKey(insightsCacheKeys.activity, userId), activityQuery.data);
+    if (smokeDnaQuery.data) writeLocalQueryCache(userLocalQueryCacheKey(insightsCacheKeys.smokeDna, userId), smokeDnaQuery.data);
+    if (replayHistoryQuery.data) writeLocalQueryCache(userLocalQueryCacheKey(insightsCacheKeys.replayHistory, userId), replayHistoryQuery.data);
+    if (monthlyReplayQuery.data) writeLocalQueryCache(userLocalQueryCacheKey(insightsCacheKeys.monthlyReplay(currentYear, currentMonth), userId), monthlyReplayQuery.data);
+    if (yearlyReplayQuery.data) writeLocalQueryCache(userLocalQueryCacheKey(insightsCacheKeys.yearlyReplay(currentYear), userId), yearlyReplayQuery.data);
+    if (cravingHistoryQuery.data) writeLocalQueryCache(userLocalQueryCacheKey(insightsCacheKeys.cravingHistory, userId), cravingHistoryQuery.data);
+    if (liveCravingQuery.data) writeLocalQueryCache(userLocalQueryCacheKey(insightsCacheKeys.liveCraving, userId), liveCravingQuery.data);
   }, [
     activityQuery.data,
     analyticsQuery.data,
@@ -298,6 +300,7 @@ export function useIntelligenceData() {
     replayHistoryQuery.data,
     smokeDnaQuery.data,
     yearlyReplayQuery.data,
+    userId,
   ]);
 
   const createSmokeDnaMutation = useMutation({
@@ -307,7 +310,7 @@ export function useIntelligenceData() {
     },
     onSuccess: () => {
       console.info("[insights-cache] Invalidating smokeDna after silent bootstrap mutation.");
-      void queryClient.invalidateQueries({ queryKey: queryKeys.smokeDna });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.smokeDna(userId) });
     },
   });
 
@@ -318,8 +321,8 @@ export function useIntelligenceData() {
     },
     onSuccess: () => {
       console.info("[insights-cache] Invalidating craving queries after silent bootstrap mutation.");
-      void queryClient.invalidateQueries({ queryKey: queryKeys.cravingHistory });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.cravingLive });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.cravingHistory(userId) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.cravingLive(userId) });
     },
   });
 

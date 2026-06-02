@@ -7,7 +7,7 @@ import { GlassCard } from "@/components/lp/GlassCard";
 import { TopRegretCard } from "@/components/lp/analytics/TopRegretCard";
 import { apiRequest } from "@/lib/api";
 import { useAppStore } from "@/lib/app-store";
-import { readLocalQueryCache, writeLocalQueryCache } from "@/lib/local-query-cache";
+import { readLocalQueryCache, userLocalQueryCacheKey, writeLocalQueryCache } from "@/lib/local-query-cache";
 import { queryCacheTimes } from "@/lib/query-cache";
 import { queryKeys } from "@/lib/query-keys";
 
@@ -38,50 +38,59 @@ const ROAST_CACHE_MAX_AGE_MS = 30 * 60 * 1000;
 export function RoastContent() {
   const hydrated = useAppStore((state) => state.meta.hydrated);
   const isAuthenticated = useAppStore((state) => state.auth.isAuthenticated);
-  const queriesEnabled = hydrated && isAuthenticated;
+  const userId = useAppStore((state) => state.auth.user?.id);
+  const queriesEnabled = hydrated && isAuthenticated && Boolean(userId);
   const cachedAnalytics = useMemo(
-    () => readLocalQueryCache<{ success: boolean; analytics: AnalyticsPayload }>(ROAST_ANALYTICS_CACHE_KEY, ROAST_CACHE_MAX_AGE_MS),
-    [],
+    () => (userId ? readLocalQueryCache<{ success: boolean; analytics: AnalyticsPayload }>(userLocalQueryCacheKey(ROAST_ANALYTICS_CACHE_KEY, userId), ROAST_CACHE_MAX_AGE_MS) : null),
+    [userId],
   );
   const cachedHighlights = useMemo(
     () =>
-      readLocalQueryCache<{ success: boolean; highlights: AnalyticsPayload & { blockedLogs: Array<{ id: number; app_name: string; message: string | null }> } }>(
-        ROAST_HIGHLIGHTS_CACHE_KEY,
-        ROAST_CACHE_MAX_AGE_MS,
-      ),
-    [],
+      userId
+        ? readLocalQueryCache<{ success: boolean; highlights: AnalyticsPayload & { blockedLogs: Array<{ id: number; app_name: string; message: string | null }> } }>(
+            userLocalQueryCacheKey(ROAST_HIGHLIGHTS_CACHE_KEY, userId),
+            ROAST_CACHE_MAX_AGE_MS,
+          )
+        : null,
+    [userId],
   );
 
   const analyticsQuery = useQuery({
-    queryKey: queryKeys.analytics,
+    queryKey: queryKeys.analytics(userId),
     queryFn: () => apiRequest<{ success: boolean; analytics: AnalyticsPayload }>("/api/analytics/roast"),
     enabled: queriesEnabled,
     ...queryCacheTimes.insights,
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
+    staleTime: 0,
     initialData: cachedAnalytics?.data,
     initialDataUpdatedAt: cachedAnalytics?.updatedAt,
   });
 
   const highlightsQuery = useQuery({
-    queryKey: queryKeys.highlights,
+    queryKey: queryKeys.highlights(userId),
     queryFn: () =>
       apiRequest<{ success: boolean; highlights: AnalyticsPayload & { blockedLogs: Array<{ id: number; app_name: string; message: string | null }> } }>("/api/analytics/highlights"),
     enabled: queriesEnabled,
     ...queryCacheTimes.insights,
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
+    staleTime: 0,
     initialData: cachedHighlights?.data,
     initialDataUpdatedAt: cachedHighlights?.updatedAt,
   });
 
   useEffect(() => {
-    if (analyticsQuery.data) {
-      writeLocalQueryCache(ROAST_ANALYTICS_CACHE_KEY, analyticsQuery.data);
+    if (analyticsQuery.data && userId) {
+      writeLocalQueryCache(userLocalQueryCacheKey(ROAST_ANALYTICS_CACHE_KEY, userId), analyticsQuery.data);
     }
-  }, [analyticsQuery.data]);
+  }, [analyticsQuery.data, userId]);
 
   useEffect(() => {
-    if (highlightsQuery.data) {
-      writeLocalQueryCache(ROAST_HIGHLIGHTS_CACHE_KEY, highlightsQuery.data);
+    if (highlightsQuery.data && userId) {
+      writeLocalQueryCache(userLocalQueryCacheKey(ROAST_HIGHLIGHTS_CACHE_KEY, userId), highlightsQuery.data);
     }
-  }, [highlightsQuery.data]);
+  }, [highlightsQuery.data, userId]);
 
   const analytics = analyticsQuery.data?.analytics;
   const highlights = highlightsQuery.data?.highlights;
