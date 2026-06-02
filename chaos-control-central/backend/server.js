@@ -20,23 +20,70 @@ const authMiddleware = require("./middleware/authMiddleware");
 const { ensureSchema } = require("./services/schemaService");
 const { initializeRealtime } = require("./socket/realtime");
 const { normalizeDatabaseError } = require("./utils/http");
-const { getRequiredEnv } = require("./utils/env");
+const { getBooleanEnv, getRequiredEnv, requireProductionEnv } = require("./utils/env");
 
 const app = express();
 const port = process.env.PORT || 5000;
 const server = http.createServer(app);
-const allowedOrigins = (process.env.CORS_ORIGIN || "")
+const defaultAllowedOrigins = [
+  "https://chaos-control-api.onrender.com",
+  "https://chaos-control-central.onrender.com",
+  "https://last-puff.onrender.com",
+  "https://last-puff-mobile.onrender.com",
+  "http://localhost:3000",
+  "http://localhost:4173",
+  "http://localhost:5000",
+  "http://localhost:5173",
+  "http://127.0.0.1:3000",
+  "http://127.0.0.1:4173",
+  "http://127.0.0.1:5000",
+  "http://127.0.0.1:5173",
+  "capacitor://localhost",
+  "ionic://localhost",
+];
+const allowedOrigins = [...defaultAllowedOrigins, ...(process.env.CORS_ORIGIN || "")
   .split(",")
   .map((origin) => origin.trim())
-  .filter(Boolean);
+  .filter(Boolean)];
+
+function isAllowedOrigin(origin) {
+  if (!origin) {
+    return true;
+  }
+
+  if (allowedOrigins.includes(origin)) {
+    return true;
+  }
+
+  try {
+    const { hostname, protocol } = new URL(origin);
+    return (
+      ["http:", "https:", "capacitor:", "ionic:"].includes(protocol) &&
+      (hostname === "localhost" || hostname === "127.0.0.1" || hostname.endsWith(".onrender.com"))
+    );
+  } catch {
+    return false;
+  }
+}
+
+const corsOptions = {
+  origin(origin, callback) {
+    if (isAllowedOrigin(origin)) {
+      callback(null, true);
+      return;
+    }
+
+    callback(new Error(`Origin ${origin} is not allowed by CORS.`));
+  },
+  credentials: true,
+  methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Authorization", "Content-Type"],
+  maxAge: 86400,
+};
 
 app.set("trust proxy", 1);
-app.use(
-  cors({
-    origin: allowedOrigins.length ? allowedOrigins : true,
-    credentials: true,
-  }),
-);
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 app.use((req, res, next) => {
   withDbTrace(() => next());
 });
@@ -163,6 +210,7 @@ app.use((error, req, res, next) => {
 const startServer = async () => {
   try {
     getRequiredEnv("JWT_SECRET");
+    requireProductionEnv(["DATABASE_URL", "JWT_SECRET"]);
     initializeRealtime(server);
 
     server.once("error", (error) => {
@@ -183,7 +231,9 @@ const startServer = async () => {
       setTimeout(async () => {
         const startedAt = process.hrtime.bigint();
         try {
-          await ensureSchema();
+          if (getBooleanEnv("RUN_STARTUP_MIGRATIONS", true)) {
+            await ensureSchema();
+          }
           await pool.query("SELECT 1");
           console.info("[perf:startup:background]", {
             durationMs: Math.round(Number(process.hrtime.bigint() - startedAt) / 1e6),

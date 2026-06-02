@@ -10,8 +10,11 @@ import { perfLog } from "@/lib/performance";
 import { getStoredToken } from "@/lib/session";
 
 const DEFAULT_API_BASE_URL = "https://chaos-control-api.onrender.com";
-const DEFAULT_REQUEST_TIMEOUT_MS = 15000;
+const DEV_API_BASE_URL = "http://localhost:5000";
+const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
 export const AUTH_REQUEST_TIMEOUT_MS = 45000;
+const DEFAULT_RETRY_ATTEMPTS = 3;
+const RETRY_BASE_DELAY_MS = 900;
 
 function resolveApiBaseUrl() {
   const envBaseUrl = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL;
@@ -20,7 +23,11 @@ function resolveApiBaseUrl() {
       ? window.localStorage.getItem("last-puff-api-base-url")
       : null;
 
-  return (envBaseUrl || runtimeOverride || DEFAULT_API_BASE_URL).replace(/\/$/, "");
+  const defaultUrl = import.meta.env.DEV ? DEV_API_BASE_URL : DEFAULT_API_BASE_URL;
+  const configuredUrl = runtimeOverride || envBaseUrl;
+  const unsafeProductionUrl = configuredUrl && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i.test(configuredUrl);
+
+  return (unsafeProductionUrl && !import.meta.env.DEV ? DEFAULT_API_BASE_URL : configuredUrl || defaultUrl).replace(/\/$/, "");
 }
 
 export const API_BASE_URL = resolveApiBaseUrl();
@@ -48,15 +55,18 @@ interface ApiRequestOptions extends Omit<AxiosRequestConfig, "url" | "data" | "h
   timeout?: number;
   loadingMessage?: string;
   skipLoading?: boolean;
+  retry?: number;
 }
 
 type ApiInternalConfig = InternalAxiosRequestConfig & {
   skipAuth?: boolean;
   loadingMessage?: string;
   skipLoading?: boolean;
+  retry?: number;
   metadata?: {
     startedAt: number;
     loadingId?: string;
+    retryCount?: number;
   };
 };
 
@@ -160,11 +170,11 @@ function resolveFriendlyErrorMessage(status?: number, message?: string, code?: s
   }
 
   if (code === "ECONNABORTED") {
-    return "The server took too long to respond. Please try again in a moment.";
+    return "The server is taking a little longer to wake up. Please try again in a moment.";
   }
 
   if (!status || status >= 500) {
-    return "Unable to connect. Please try again.";
+    return "The server is waking up. Please try again in a moment.";
   }
 
   return message || "Unable to connect. Please try again.";
@@ -179,6 +189,10 @@ function logApiFailure(details: {
   responseBody?: unknown;
   error: unknown;
 }) {
+  if (!import.meta.env.DEV) {
+    return;
+  }
+
   console.error("[api-error]", {
     endpoint: `${details.method} ${details.url}`,
     request: {
@@ -193,6 +207,24 @@ function logApiFailure(details: {
   });
 }
 
+function isRetryableApiError(error: AxiosError) {
+  const method = (error.config?.method ?? "get").toUpperCase();
+  if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
+    return false;
+  }
+
+  const status = error.response?.status;
+  return !status || status === 408 || status === 425 || status === 429 || status >= 500 || error.code === "ECONNABORTED";
+}
+
+function retryDelay(retryCount: number) {
+  return RETRY_BASE_DELAY_MS * 2 ** Math.max(0, retryCount - 1) + Math.round(Math.random() * 250);
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
   timeout: DEFAULT_REQUEST_TIMEOUT_MS,
@@ -202,7 +234,10 @@ export const apiClient = axios.create({
 });
 
 apiClient.interceptors.request.use((config: ApiInternalConfig) => {
-  config.metadata = { startedAt: typeof performance !== "undefined" ? performance.now() : Date.now() };
+  config.metadata = {
+    ...(config.metadata ?? {}),
+    startedAt: config.metadata?.startedAt ?? (typeof performance !== "undefined" ? performance.now() : Date.now()),
+  };
   config.headers = AxiosHeaders.from(config.headers ?? {});
   const shouldAttachAuth = config.skipAuth !== true;
   const token = shouldAttachAuth ? getAuthToken() : null;
@@ -211,16 +246,20 @@ apiClient.interceptors.request.use((config: ApiInternalConfig) => {
 
   if (token) {
     config.headers.set("Authorization", `Bearer ${token}`);
-    console.info(`[api-debug] ${method} ${url} -> Authorization attached`);
+    if (import.meta.env.DEV) {
+      console.info(`[api-debug] ${method} ${url} -> Authorization attached`);
+    }
   } else {
     config.headers.delete("Authorization");
     if (shouldAttachAuth) {
-      console.warn(`[api-debug] ${method} ${url} -> Authorization token missing`);
+      if (import.meta.env.DEV) {
+        console.warn(`[api-debug] ${method} ${url} -> Authorization token missing`);
+      }
       throw new ApiRequestError("Please sign in again to save blocked apps.", 401);
     }
   }
 
-  if (shouldDebugAuthRequest(url)) {
+  if (import.meta.env.DEV && shouldDebugAuthRequest(url)) {
     console.info(`[api-debug] request headers for ${method} ${url}`, redactHeaders(config.headers.toJSON()));
   }
 
@@ -250,8 +289,19 @@ apiClient.interceptors.response.use(
     }
     return response;
   },
-  (error: AxiosError<{ message?: string }>) => {
+  async (error: AxiosError<{ message?: string }>) => {
     const config = error.config as ApiInternalConfig | undefined;
+    const retryLimit = config?.retry ?? DEFAULT_RETRY_ATTEMPTS;
+    const retryCount = config?.metadata?.retryCount ?? 0;
+    if (config && retryCount < retryLimit && isRetryableApiError(error)) {
+      config.metadata = {
+        ...(config.metadata ?? { startedAt: typeof performance !== "undefined" ? performance.now() : Date.now() }),
+        retryCount: retryCount + 1,
+      };
+      await sleep(retryDelay(config.metadata.retryCount));
+      return apiClient.request(config);
+    }
+
     if (config?.metadata?.loadingId) {
       loadingStore.stopLoading(config.metadata.loadingId);
     }
@@ -312,7 +362,7 @@ function normalizeBody(body: unknown, headers: Record<string, string>) {
 }
 
 export async function apiRequest<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
-  const { auth = true, body, method = "GET", headers = {}, timeout, loadingMessage, skipLoading, ...rest } = options;
+  const { auth = true, body, method = "GET", headers = {}, timeout, loadingMessage, skipLoading, retry, ...rest } = options;
   const data = normalizeBody(body, headers);
   const nextHeaders = { ...headers };
 
@@ -329,6 +379,7 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
     skipAuth: !auth,
     loadingMessage,
     skipLoading,
+    retry,
     ...rest,
   } as ApiInternalConfig);
 

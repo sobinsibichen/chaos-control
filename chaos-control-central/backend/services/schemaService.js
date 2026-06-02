@@ -1,4 +1,6 @@
 const pool = require("../config/db");
+const fs = require("fs/promises");
+const path = require("path");
 const { ensureAchievementDefinitions, ensureLevelDefinitions } = require("./achievementEngine");
 
 const premiumUserTables = [
@@ -94,7 +96,7 @@ async function normalizePremiumFeatureSchema(client) {
   }
 }
 
-async function ensureSchema() {
+async function ensureLegacySchema() {
   const client = await pool.connect();
 
   try {
@@ -364,6 +366,85 @@ async function ensureSchema() {
   }
 }
 
+async function ensureMigrationsTable(client) {
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS public.schema_migrations (
+      id TEXT PRIMARY KEY,
+      applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+}
+
+async function listMigrationFiles() {
+  const migrationsDir = path.join(__dirname, "..", "migrations");
+  const files = await fs.readdir(migrationsDir);
+  return files.filter((file) => /^\d+_.+\.sql$/i.test(file)).sort();
+}
+
+async function applyMigration(client, fileName) {
+  const migrationId = fileName.replace(/\.sql$/i, "");
+  const existing = await client.query("SELECT 1 FROM public.schema_migrations WHERE id = $1", [migrationId]);
+  if (existing.rows.length) {
+    return false;
+  }
+
+  const migrationSql = await fs.readFile(path.join(__dirname, "..", "migrations", fileName), "utf8");
+  await client.query("BEGIN");
+  try {
+    await client.query(migrationSql);
+    await client.query("INSERT INTO public.schema_migrations (id) VALUES ($1)", [migrationId]);
+    await client.query("COMMIT");
+    return true;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  }
+}
+
+async function runMigrations() {
+  const client = await pool.connect();
+  let appliedCount = 0;
+
+  try {
+    await ensureMigrationsTable(client);
+    const files = await listMigrationFiles();
+    for (const fileName of files) {
+      if (await applyMigration(client, fileName)) {
+        appliedCount += 1;
+      }
+    }
+  } finally {
+    client.release();
+  }
+
+  return appliedCount;
+}
+
+async function ensureSchema() {
+  const appliedCount = await runMigrations();
+
+  if (appliedCount === 0 && process.env.RUN_SCHEMA_SEEDS !== "true") {
+    return;
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    if (process.env.RUN_LEGACY_SCHEMA_NORMALIZATION === "true") {
+      await normalizePremiumFeatureSchema(client);
+    }
+    await ensureAchievementDefinitions(client);
+    await ensureLevelDefinitions(client);
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 module.exports = {
   ensureSchema,
+  ensureLegacySchema,
 };
