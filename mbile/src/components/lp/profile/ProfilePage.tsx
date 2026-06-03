@@ -491,7 +491,7 @@ export default function ProfilePage() {
           <button
             onClick={() => savePreferences.mutate()}
             disabled={savePreferences.isPending}
-            className="rounded-lg bg-black px-4 py-3 text-xs font-semibold text-white transition-all hover:bg-black/90"
+            className="glass-button rounded-lg px-4 py-3 text-xs font-semibold transition-all"
           >
             {savePreferences.isPending ? "Saving..." : "Update"}
           </button>
@@ -672,7 +672,7 @@ export default function ProfilePage() {
 
           <button
             onClick={() => void downloadCertificate()}
-            className="mt-4 w-full rounded-lg bg-black px-4 py-3 text-xs font-semibold text-white transition-all hover:bg-black/90"
+            className="glass-button mt-4 w-full rounded-lg px-4 py-3 text-xs font-semibold transition-all"
           >
             Download Premium Certificate
           </button>

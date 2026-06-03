@@ -152,10 +152,10 @@ public final class BlockingEngine {
         try {
             int mode = appOpsManager.checkOpNoThrow(
                 "android:access_restricted_settings",
-                android.os.Process.myUid(),
+                context.getApplicationInfo().uid,
                 context.getPackageName()
             );
-            return mode == AppOpsManager.MODE_ALLOWED;
+            return mode == AppOpsManager.MODE_ALLOWED || mode == AppOpsManager.MODE_DEFAULT;
         } catch (Exception error) {
             Log.w(TAG, "Unable to read restricted settings app-op", error);
             return false;

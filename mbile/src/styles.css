@@ -136,6 +136,29 @@
     border: 1px solid oklch(0.88 0.01 85 / 0.95);
     box-shadow: 0 18px 34px oklch(0.18 0.01 260 / 0.08);
   }
+  .glass-button {
+    border: 1px solid oklch(1 0 0 / 0.86);
+    background:
+      linear-gradient(145deg, oklch(1 0 0 / 0.92), oklch(0.96 0.004 85 / 0.7));
+    color: oklch(0.12 0 0);
+    box-shadow:
+      0 16px 34px oklch(0.18 0.01 260 / 0.1),
+      inset 0 1px 0 oklch(1 0 0 / 0.92);
+    backdrop-filter: blur(18px) saturate(1.08);
+    -webkit-backdrop-filter: blur(18px) saturate(1.08);
+  }
+  .glass-button:hover {
+    background:
+      linear-gradient(145deg, oklch(1 0 0 / 0.98), oklch(0.98 0.004 85 / 0.82));
+  }
+  .glass-button-active {
+    border-color: oklch(0.78 0.02 85 / 0.95);
+    background:
+      linear-gradient(145deg, oklch(1 0 0 / 0.98), oklch(0.94 0.006 85 / 0.86));
+    box-shadow:
+      0 18px 38px oklch(0.18 0.01 260 / 0.13),
+      inset 0 1px 0 oklch(1 0 0 / 0.96);
+  }
   .text-gradient-chaos {
     background: var(--gradient-chaos);
     -webkit-background-clip: text;

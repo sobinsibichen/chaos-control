@@ -125,7 +125,7 @@ function LoginPage() {
             <button
               onClick={handleLogin}
               disabled={submitting}
-              className="relative w-full overflow-hidden rounded-2xl bg-primary px-5 py-3 text-sm font-semibold tracking-wide text-primary-foreground shadow-[0_16px_34px_rgba(15,23,42,0.16)] transition-all hover:bg-primary/90"
+              className="glass-button relative w-full overflow-hidden rounded-2xl px-5 py-3 text-sm font-semibold tracking-wide transition-all"
             >
               <span className="relative">{submitting ? "Signing in..." : "Login"}</span>
             </button>

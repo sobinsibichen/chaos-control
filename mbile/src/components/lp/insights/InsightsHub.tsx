@@ -32,7 +32,7 @@ class InsightsTabErrorBoundary extends Component<{ tabName: InsightsTab; childre
           <p className="mt-2 text-sm text-muted-foreground">
             Something in this tab failed to render. Try refreshing the page, or switch to a different tab for now.
           </p>
-          <button onClick={() => window.location.reload()} className="mt-4 rounded-full bg-black px-4 py-2 text-sm font-semibold text-white">
+          <button onClick={() => window.location.reload()} className="glass-button mt-4 rounded-full px-4 py-2 text-sm font-semibold">
             Try again
           </button>
         </GlassCard>
@@ -136,14 +136,14 @@ export function InsightsHub({ initialTab = "Roast" }: { initialTab?: InsightsTab
                 <button
                   key={tab.key}
                   onClick={() => setActiveTab(tab.key)}
-                  className={`relative h-12 min-w-0 whitespace-nowrap rounded-full bg-black px-2 text-center text-[10px] font-semibold text-white shadow-sm transition-all hover:bg-black/90 ${
-                    active ? "ring-2 ring-black/10" : ""
+                  className={`glass-button relative h-12 min-w-0 whitespace-nowrap rounded-full px-2 text-center text-[10px] font-semibold transition-all ${
+                    active ? "glass-button-active ring-2 ring-white/80" : ""
                   }`}
                 >
                   {active ? (
                     <motion.span
                       layoutId="insights-tab"
-                      className="absolute inset-0 rounded-full bg-white/10"
+                      className="absolute inset-0 rounded-full bg-white/40"
                       transition={{ type: "spring", stiffness: 320, damping: 28 }}
                     />
                   ) : null}

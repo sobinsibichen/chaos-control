@@ -66,7 +66,7 @@ export function ChatModal({ open, user, messages, typing, onClose }: ChatModalPr
               <button onClick={onClose} className="rounded-full border border-foreground/10 bg-card p-2 text-foreground shadow-sm">
                 <ArrowLeft className="h-4 w-4" />
               </button>
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-foreground font-bold text-primary-foreground shadow-sm">
+              <div className="glass-button flex h-11 w-11 items-center justify-center rounded-2xl font-bold shadow-sm">
                 {isImageAvatar ? (
                   <img src={user.avatar} alt={user.username} className="h-full w-full rounded-2xl object-cover" />
                 ) : (
@@ -132,7 +132,7 @@ export function ChatModal({ open, user, messages, typing, onClose }: ChatModalPr
                 />
                 <button
                   onClick={sendMessage}
-                  className="flex h-[52px] w-[52px] items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-[0_16px_34px_rgba(15,23,42,0.16)]"
+                  className="glass-button flex h-[52px] w-[52px] items-center justify-center rounded-2xl"
                 >
                   <Send className="h-4 w-4" />
                 </button>

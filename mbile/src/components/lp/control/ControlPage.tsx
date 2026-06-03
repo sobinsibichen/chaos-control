@@ -115,7 +115,7 @@ function minutesFromTime(hour: number, minute: number) {
 }
 
 function isTimeRangeValid(startHour: number, startMinute: number, endHour: number, endMinute: number) {
-  return minutesFromTime(endHour, endMinute) > minutesFromTime(startHour, startMinute);
+  return minutesFromTime(endHour, endMinute) !== minutesFromTime(startHour, startMinute);
 }
 
 function parseBlockWindow(blockTime?: string | null) {
@@ -211,12 +211,6 @@ function PermissionWizard({
     return "done" as PermissionWizardStep;
   })();
 
-  useEffect(() => {
-    if (nextStep === "done") {
-      onComplete();
-    }
-  }, [nextStep, onComplete]);
-
   const stepConfig: Record<PermissionWizardStep, { title: string; description: string; primary: string; secondary?: string }> = {
     intro: {
       title: "Last Puff needs permissions to protect your focus",
@@ -283,7 +277,7 @@ function PermissionWizard({
       return;
     }
     if (nextStep === "done") {
-      onRefresh();
+      onComplete();
       return;
     }
     if (nextStep === "restricted") {
@@ -364,7 +358,7 @@ function PermissionWizard({
             <div className="mt-5 grid gap-3 sm:grid-cols-2">
               <button
                 onClick={handlePrimary}
-                className="rounded-2xl bg-black px-4 py-3 text-sm font-semibold text-white shadow-sm"
+                className="glass-button rounded-2xl px-4 py-3 text-sm font-semibold shadow-sm"
               >
                 {activeConfig.primary}
               </button>
@@ -392,11 +386,18 @@ function PermissionWizard({
 }
 
 function defaultEndHour(startHour: number, startMinute: number) {
-  return (startHour + Math.floor((startMinute + 60) / 60)) % 24;
+  return (startHour + Math.floor((startMinute + 600) / 60)) % 24;
 }
 
 function defaultEndMinute(startMinute: number) {
-  return (startMinute + 60) % 60;
+  return (startMinute + 600) % 60;
+}
+
+function defaultBlockWindow(startHour: number, startMinute: number) {
+  return {
+    endHour: defaultEndHour(startHour, startMinute),
+    endMinute: defaultEndMinute(startMinute),
+  };
 }
 
 function inferAppPresentation(appName: string, packageName: string) {
@@ -457,7 +458,7 @@ export default function ControlPage() {
   const deferredSearch = useDeferredValue(searchValue);
   const [blockHour, setBlockHour] = useState(22);
   const [blockMinute, setBlockMinute] = useState(0);
-  const [blockEndHour, setBlockEndHour] = useState(23);
+  const [blockEndHour, setBlockEndHour] = useState(8);
   const [blockEndMinute, setBlockEndMinute] = useState(0);
   const [apps, setApps] = useState<AppItem[]>([]);
   const [draftSelectedPackages, setDraftSelectedPackages] = useState<string[]>([]);
@@ -544,20 +545,17 @@ export default function ControlPage() {
       if (typeof parsed.blockHour === "number" && typeof parsed.blockMinute === "number") {
         setBlockHour(parsed.blockHour);
         setBlockMinute(parsed.blockMinute);
-        if (typeof parsed.blockEndHour === "number" && typeof parsed.blockEndMinute === "number") {
-          setBlockEndHour(parsed.blockEndHour);
-          setBlockEndMinute(parsed.blockEndMinute);
-        } else {
-          setBlockEndHour(defaultEndHour(parsed.blockHour, parsed.blockMinute));
-          setBlockEndMinute(defaultEndMinute(parsed.blockMinute));
-        }
+        const tenHourWindow = defaultBlockWindow(parsed.blockHour, parsed.blockMinute);
+        setBlockEndHour(tenHourWindow.endHour);
+        setBlockEndMinute(tenHourWindow.endMinute);
       } else if (parsed.blockTime) {
         const parsedWindow = parseBlockWindow(parsed.blockTime);
         if (parsedWindow) {
           setBlockHour(parsedWindow.startHour);
           setBlockMinute(parsedWindow.startMinute);
-          setBlockEndHour(parsedWindow.endHour);
-          setBlockEndMinute(parsedWindow.endMinute);
+          const tenHourWindow = defaultBlockWindow(parsedWindow.startHour, parsedWindow.startMinute);
+          setBlockEndHour(tenHourWindow.endHour);
+          setBlockEndMinute(tenHourWindow.endMinute);
         }
       }
     } catch {
@@ -597,8 +595,9 @@ export default function ControlPage() {
           if (parsedWindow) {
             setBlockHour(parsedWindow.startHour);
             setBlockMinute(parsedWindow.startMinute);
-            setBlockEndHour(parsedWindow.endHour);
-            setBlockEndMinute(parsedWindow.endMinute);
+            const tenHourWindow = defaultBlockWindow(parsedWindow.startHour, parsedWindow.startMinute);
+            setBlockEndHour(tenHourWindow.endHour);
+            setBlockEndMinute(tenHourWindow.endMinute);
           }
         }
       } catch (error) {
@@ -627,7 +626,10 @@ export default function ControlPage() {
       return;
     }
 
-    const nextBlockTime = `${formatTime24(blockHour, blockMinute)}-${formatTime24(blockEndHour, blockEndMinute)}`;
+    const tenHourWindow = defaultBlockWindow(blockHour, blockMinute);
+    const nextBlockTime = `${formatTime24(blockHour, blockMinute)}-${formatTime24(tenHourWindow.endHour, tenHourWindow.endMinute)}`;
+    setBlockEndHour(tenHourWindow.endHour);
+    setBlockEndMinute(tenHourWindow.endMinute);
     setSavingSchedule(true);
     setErrorMessage("");
     setScheduleSuccessMessage("Saved successfully.");
@@ -651,8 +653,8 @@ export default function ControlPage() {
           blockTime: nextBlockTime,
           blockHour,
           blockMinute,
-          blockEndHour,
-          blockEndMinute,
+          blockEndHour: tenHourWindow.endHour,
+          blockEndMinute: tenHourWindow.endMinute,
           enabled: true,
           repeatType: "daily",
         });
@@ -676,17 +678,20 @@ export default function ControlPage() {
       return;
     }
 
+    const tenHourWindow = defaultBlockWindow(blockHour, blockMinute);
+    const tenHourBlockTime = `${formatTime24(blockHour, blockMinute)}-${formatTime24(tenHourWindow.endHour, tenHourWindow.endMinute)}`;
+
     const syncKey = JSON.stringify({
       apps: apps.map((app) => ({
         appName: app.app_name,
         packageName: app.package_name || app.app_name,
         isActive: app.is_active,
       })),
-      blockTime,
+      blockTime: tenHourBlockTime,
       blockHour,
       blockMinute,
-      blockEndHour,
-      blockEndMinute,
+      blockEndHour: tenHourWindow.endHour,
+      blockEndMinute: tenHourWindow.endMinute,
     });
     if (lastNativeSyncRef.current === syncKey) {
       return;
@@ -700,11 +705,11 @@ export default function ControlPage() {
             packageName: app.package_name || app.app_name,
             isActive: app.is_active,
           })),
-          blockTime: `${formatTime24(blockHour, blockMinute)}-${formatTime24(blockEndHour, blockEndMinute)}`,
+          blockTime: tenHourBlockTime,
           blockHour,
           blockMinute,
-          blockEndHour,
-          blockEndMinute,
+          blockEndHour: tenHourWindow.endHour,
+          blockEndMinute: tenHourWindow.endMinute,
           enabled: true,
           repeatType: "daily",
         });
@@ -728,7 +733,7 @@ export default function ControlPage() {
   const hasValidTimeRange = isTimeRangeValid(blockHour, blockMinute, blockEndHour, blockEndMinute);
   const scheduleValidationMessages = [
     selectedAppsCount ? "" : "Select at least one app.",
-    hasValidTimeRange ? "" : "End time must be after start time.",
+    hasValidTimeRange ? "" : "End time must be different from start time.",
   ].filter(Boolean);
   const canSaveSchedule = !scheduleIsActive && selectedAppsCount > 0 && hasValidTimeRange && !savingSchedule;
 
@@ -1146,10 +1151,10 @@ export default function ControlPage() {
               </div>
               <motion.button
                 whileTap={{ scale: 0.98 }}
-                onClick={() => void saveSchedule()}
-                disabled={savingSchedule}
-                className="h-12 rounded-2xl bg-black px-5 text-sm font-semibold text-white shadow-sm transition-all hover:bg-black/90 disabled:cursor-not-allowed disabled:opacity-70"
-              >
+              onClick={() => void saveSchedule()}
+              disabled={savingSchedule}
+                className="glass-button h-12 rounded-2xl px-5 text-sm font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-70"
+            >
                 {savingSchedule ? "Saving..." : "Save"}
               </motion.button>
             </div>
@@ -1167,7 +1172,7 @@ export default function ControlPage() {
             <motion.button
               whileTap={{ scale: 0.98 }}
               onClick={openPicker}
-              className="flex w-full items-center justify-center gap-2 rounded-full bg-black px-4 py-3 text-sm font-semibold text-white shadow-[0_18px_36px_rgba(15,23,42,0.18)] transition-all hover:bg-black/90"
+              className="glass-button flex w-full items-center justify-center gap-2 rounded-full px-4 py-3 text-sm font-semibold transition-all"
             >
               <Plus className="h-4 w-4" />
               Choose Apps
@@ -1226,7 +1231,7 @@ export default function ControlPage() {
                   onClick={() => {
                     setChallengeOpen(true);
                   }}
-                  className="rounded-2xl border border-primary/20 bg-primary px-3 py-1.5 text-[11px] font-medium text-primary-foreground shadow-sm transition-all"
+                  className="glass-button rounded-2xl px-3 py-1.5 text-[11px] font-medium transition-all"
                 >
                   Unlock
                 </button>
@@ -1341,11 +1346,11 @@ export default function ControlPage() {
                               onClick={() => toggleDraftSelection(item)}
                               className={`flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-all ${
                                 selected
-                                  ? "border-black bg-white text-foreground"
+                                  ? "glass-button-active text-foreground"
                                   : "border-foreground/10 bg-white text-foreground"
                               }`}
                             >
-                              <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${selected ? "bg-black/5" : "bg-foreground/5"}`}>
+                              <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${selected ? "bg-white/80" : "bg-foreground/5"}`}>
                                 <Icon className="h-4 w-4" />
                               </div>
                               <div className="min-w-0 flex-1">
@@ -1354,7 +1359,7 @@ export default function ControlPage() {
                                   {item.packageName}
                                 </div>
                               </div>
-                              <div className={`h-5 w-5 rounded-full border ${selected ? "border-black bg-black" : "border-foreground/20 bg-white"}`} />
+                              <div className={`h-5 w-5 rounded-full border ${selected ? "border-foreground/30 bg-white shadow-inner" : "border-foreground/20 bg-white"}`} />
                             </motion.button>
                           );
                             })}
@@ -1384,7 +1389,7 @@ export default function ControlPage() {
                     <button
                       onClick={() => void saveSelectedApps()}
                       disabled={savingSelection}
-                      className="rounded-full bg-black px-4 py-3 text-xs font-semibold text-white shadow-[0_16px_34px_rgba(15,23,42,0.18)] transition-all hover:bg-black/90 disabled:opacity-70"
+                      className="glass-button rounded-full px-4 py-3 text-xs font-semibold transition-all disabled:opacity-70"
                     >
                       {savingSelection ? "Saving..." : "Save Selected Apps"}
                     </button>

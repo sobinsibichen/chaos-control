@@ -65,8 +65,9 @@ public class ProtectionPlugin extends Plugin {
             blockMinute = 0;
         }
         if (!isValidTime(blockEndHour, blockEndMinute)) {
-            blockEndHour = blockHour;
-            blockEndMinute = blockMinute;
+            int[] defaultEnd = addMinutes(blockHour, blockMinute, 600);
+            blockEndHour = defaultEnd[0];
+            blockEndMinute = defaultEnd[1];
         }
 
         BlockingRepository.saveSchedule(
@@ -340,17 +341,22 @@ public class ProtectionPlugin extends Plugin {
 
         String normalized = rawWindow.trim().replace(" to ", "-").replace("→", "-");
         String[] parts = normalized.split("-");
-        if (parts.length < 2) {
+        int[] start = parseTime(parts[0]);
+        if (start == null) {
             return null;
         }
 
-        int[] start = parseTime(parts[0]);
-        int[] end = parseTime(parts[1]);
-        if (start == null || end == null) {
-            return null;
+        int[] end = parts.length < 2 ? addMinutes(start[0], start[1], 600) : parseTime(parts[1]);
+        if (end == null) {
+            end = addMinutes(start[0], start[1], 600);
         }
 
         return new TimeWindow(start[0], start[1], end[0], end[1]);
+    }
+
+    private static int[] addMinutes(int hour, int minute, int minutesToAdd) {
+        int totalMinutes = ((hour * 60 + minute + minutesToAdd) % (24 * 60) + (24 * 60)) % (24 * 60);
+        return new int[]{totalMinutes / 60, totalMinutes % 60};
     }
 
     private static int[] parseTime(String value) {

@@ -1,8 +1,9 @@
 import { Radar as RadarIcon } from "lucide-react";
 import {
   CartesianGrid,
+  Bar,
+  ComposedChart,
   Line,
-  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -19,6 +20,7 @@ export function CravingAiPanel({
   data: InsightsSharedData;
   dangerousWindow: { label: string; intensity: number };
 }) {
+  const engine = data.patternPrediction;
   const hourlyCraving = data.hourlyCraving.length
     ? data.hourlyCraving
     : Array.from({ length: 24 }, (_, hour) => ({
@@ -26,12 +28,8 @@ export function CravingAiPanel({
         label: `${String(hour).padStart(2, "0")}:00`,
         intensity: 0,
       }));
-  const riskValue = Number.isFinite(data.liveCraving?.cravingProbability ?? dangerousWindow.intensity)
-    ? Math.max(0, Math.min(100, data.liveCraving?.cravingProbability ?? dangerousWindow.intensity))
-    : 0;
-  const stressValue = Number.isFinite(data.liveCraving?.intensityScore ?? Math.min(100, (data.dashboard?.dailyStatus.regretLevel ?? 0) + 18))
-    ? Math.max(0, Math.min(100, data.liveCraving?.intensityScore ?? Math.min(100, (data.dashboard?.dailyStatus.regretLevel ?? 0) + 18)))
-    : 0;
+  const riskValue = engine.scores.relapseRisk;
+  const successValue = engine.scores.quitSuccess;
   const dangerousLabel = dangerousWindow.label || "22:00";
   const triggerPrimary = data.liveCraving?.triggerPrediction?.primary ?? "Routine loop";
   const generatedAt = data.liveCraving?.createdAt ? new Date(data.liveCraving.createdAt).toLocaleString("en-IN") : "Live";
@@ -42,9 +40,11 @@ export function CravingAiPanel({
         <div className="flex items-start justify-between gap-3">
           <div>
             <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Prediction engine</div>
-            <div className="mt-2 text-2xl font-semibold text-foreground">Live craving forecast</div>
+            <div className="mt-2 text-2xl font-semibold text-foreground">Pattern forecast</div>
             <p className="mt-2 text-sm text-muted-foreground">
-              {data.liveCraving?.insightText ?? `Danger window detected around ${dangerousLabel}. Probability elevated for the next 30 minutes.`}
+              {engine.hasPredictionData
+                ? `Forecasts use weighted moving averages, trend regression, trigger scoring, and current craving risk. Peak window: ${dangerousLabel}.`
+                : engine.insufficientMessage}
             </p>
             <div className="mt-2 text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Generated {generatedAt}</div>
           </div>
@@ -56,24 +56,61 @@ export function CravingAiPanel({
 
       <div className="grid grid-cols-2 gap-3">
         <GlassCard className="border border-foreground/10">
-          <CircularMeter value={riskValue} label="RISK" sub="next craving" size={130} color="oklch(0.65 0.18 30)" />
+          <CircularMeter value={riskValue} label="RISK" sub="relapse" size={130} color="oklch(0.65 0.18 30)" />
         </GlassCard>
         <GlassCard className="border border-foreground/10">
-          <CircularMeter value={stressValue} label="STRESS" sub="trigger load" size={130} color="oklch(0.62 0.16 15)" />
+          <CircularMeter value={successValue} label="QUIT" sub="success" size={130} color="oklch(0.62 0.16 145)" />
         </GlassCard>
       </div>
+
+      <GlassCard className="border border-foreground/10">
+        <div className="mb-4">
+          <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Smoking forecast</div>
+          <div className="mt-1 text-lg font-semibold text-foreground">Recent trend and projection</div>
+        </div>
+        <div className="h-60">
+          <ResponsiveContainer width="100%" height="100%">
+            <ComposedChart data={engine.trendSeries}>
+              <CartesianGrid vertical={false} stroke="rgba(15,23,42,0.08)" />
+              <XAxis dataKey="label" tick={{ fill: "#64748b", fontSize: 10 }} axisLine={false} tickLine={false} />
+              <YAxis hide />
+              <Tooltip />
+              <Bar dataKey="cigarettes" fill="rgba(15,23,42,0.18)" radius={[8, 8, 0, 0]} />
+              <Line type="monotone" dataKey="projected" stroke="#111827" strokeWidth={3} dot />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+      </GlassCard>
+
+      <GlassCard className="border border-foreground/10">
+        <div className="mb-4 text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Forecast Cards</div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {engine.forecastCards.map((card) => (
+            <div
+              key={card.title}
+              className={`rounded-2xl border px-4 py-4 ${
+                card.available ? "border-foreground/10 bg-background" : "border-dashed border-foreground/10 bg-white/55"
+              }`}
+            >
+              <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">{card.title}</div>
+              <div className="mt-2 text-lg font-semibold text-foreground">{card.value}</div>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">{card.detail}</p>
+            </div>
+          ))}
+        </div>
+      </GlassCard>
 
       <GlassCard className="border border-foreground/10">
         <div className="mb-4 text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Craving forecast by hour</div>
         <div className="h-60">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={hourlyCraving}>
+            <ComposedChart data={hourlyCraving}>
               <CartesianGrid vertical={false} stroke="rgba(15,23,42,0.08)" />
               <XAxis dataKey="label" tick={{ fill: "#64748b", fontSize: 10 }} interval={3} axisLine={false} tickLine={false} />
               <YAxis hide domain={[0, 100]} />
               <Tooltip />
               <Line type="monotone" dataKey="intensity" stroke="#111827" strokeWidth={3} dot={false} />
-            </LineChart>
+            </ComposedChart>
           </ResponsiveContainer>
         </div>
       </GlassCard>

@@ -59,7 +59,7 @@ export function NearbyUserCard({ user, index, onMessage }: NearbyUserCardProps) 
             <div className="mt-4 flex gap-2">
               <button
                 onClick={() => onMessage(user)}
-                className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-primary py-2.5 text-xs font-semibold text-primary-foreground shadow-[0_16px_34px_rgba(15,23,42,0.16)] transition-all hover:bg-primary/90"
+                className="glass-button flex flex-1 items-center justify-center gap-2 rounded-2xl py-2.5 text-xs font-semibold transition-all"
               >
                 <MessageCircle className="h-4 w-4" />
                 Message

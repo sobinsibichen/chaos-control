@@ -436,7 +436,7 @@ export function DashboardPage() {
           whileTap={{ scale: 0.97 }}
           onClick={() => recordMutation.mutate()}
           disabled={recordMutation.isPending}
-          className="relative w-full overflow-hidden rounded-2xl bg-primary px-5 py-3 text-sm font-semibold tracking-wide text-primary-foreground shadow-[0_16px_34px_rgba(15,23,42,0.16)] transition-all hover:bg-primary/90"
+          className="glass-button relative w-full overflow-hidden rounded-2xl px-5 py-3 text-sm font-semibold tracking-wide transition-all"
         >
           <span className="relative">{recordMutation.isPending ? "Saved locally..." : "Record Cigarette"}</span>
         </motion.button>
@@ -447,7 +447,7 @@ export function DashboardPage() {
             setFunnyMessage(funnyMessages[Math.floor(Math.random() * funnyMessages.length)] || funnyMessages[0]);
             setQuitStep(1);
           }}
-          className="mt-3 relative w-full overflow-hidden rounded-2xl bg-black px-5 py-3 text-sm font-semibold tracking-wide text-white shadow-[0_16px_34px_rgba(15,23,42,0.2)] transition-all hover:bg-black/90"
+          className="glass-button relative mt-3 w-full overflow-hidden rounded-2xl px-5 py-3 text-sm font-semibold tracking-wide transition-all"
         >
           <span className="relative">I'M QUITTING</span>
         </motion.button>
@@ -567,7 +567,7 @@ export function DashboardPage() {
                     <div className="mt-6 grid grid-cols-2 gap-3">
                       <button
                         onClick={() => setQuitStep(2)}
-                        className="rounded-2xl bg-black px-4 py-3 text-sm font-semibold text-white"
+                        className="glass-button rounded-2xl px-4 py-3 text-sm font-semibold"
                       >
                         YES
                       </button>
@@ -586,7 +586,7 @@ export function DashboardPage() {
                     <div className="mt-6 grid grid-cols-2 gap-3">
                       <button
                         onClick={() => quitMutation.mutate()}
-                        className="rounded-2xl bg-black px-4 py-3 text-sm font-semibold text-white"
+                        className="glass-button rounded-2xl px-4 py-3 text-sm font-semibold"
                       >
                         {quitMutation.isPending ? "Starting..." : "YES I'M DONE"}
                       </button>
@@ -626,7 +626,7 @@ export function DashboardPage() {
                   <motion.div
                     animate={popup.type === "final" ? { scale: [1, 1.08, 1], opacity: [0.7, 1, 0.8] } : { scale: [1, 1.04, 1] }}
                     transition={{ duration: 2.4, repeat: Infinity }}
-                    className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-black text-white"
+                    className="glass-button mx-auto flex h-16 w-16 items-center justify-center rounded-full"
                   >
                     <Trophy className="h-7 w-7" />
                   </motion.div>
@@ -634,7 +634,7 @@ export function DashboardPage() {
                   <div className="mt-2 text-sm text-muted-foreground">{popup.description}</div>
                   <button
                     onClick={() => setPopup(null)}
-                    className="mt-6 rounded-2xl bg-black px-5 py-3 text-sm font-semibold text-white"
+                    className="glass-button mt-6 rounded-2xl px-5 py-3 text-sm font-semibold"
                   >
                     Keep going
                   </button>

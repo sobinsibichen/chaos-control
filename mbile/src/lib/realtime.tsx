@@ -151,6 +151,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
   const token = useAppStore((state) => state.auth.token);
   const isAuthenticated = useAppStore((state) => state.auth.isAuthenticated);
+  const userId = useAppStore((state) => state.auth.user?.id);
 
   useEffect(() => {
     if (!isAuthenticated || !token) {
@@ -186,10 +187,10 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
         void queryClient.invalidateQueries({ queryKey: queryKeys.cravingHistory });
         void queryClient.invalidateQueries({ queryKey: queryKeys.cravingLive });
         void queryClient.invalidateQueries({ queryKey: queryKeys.voiceCommands });
-        void queryClient.invalidateQueries({ queryKey: queryKeys.favoriteStores });
+        void queryClient.invalidateQueries({ queryKey: queryKeys.favoriteStores(userId) });
       }
     });
-  }, [queryClient]);
+  }, [queryClient, userId]);
 
   const value = useMemo(() => realtimeManager, []);
 

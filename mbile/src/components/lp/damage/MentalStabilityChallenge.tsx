@@ -231,7 +231,7 @@ export function MentalStabilityChallenge({ open, onClose, onResult }: MentalStab
               </button>
               <button
                 onClick={completed ? onClose : retry}
-                className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-primary py-3 text-xs font-bold uppercase tracking-widest text-primary-foreground shadow-[0_16px_34px_rgba(15,23,42,0.16)]"
+                className="glass-button flex flex-1 items-center justify-center gap-2 rounded-2xl py-3 text-xs font-bold uppercase tracking-widest"
               >
                 <CircleCheckBig className="h-4 w-4" />
                 {completed ? "Return Armed" : "Reset Attempt"}

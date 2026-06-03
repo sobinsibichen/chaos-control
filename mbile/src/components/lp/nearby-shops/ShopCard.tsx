@@ -87,7 +87,7 @@ export function ShopCard({
             target="_blank"
             rel="noreferrer"
             onClick={(event) => event.stopPropagation()}
-            className="flex items-center justify-center gap-2 rounded-2xl bg-slate-900 px-3 py-3 text-xs font-semibold text-white transition-transform hover:scale-[1.01]"
+            className="glass-button flex items-center justify-center gap-2 rounded-2xl px-3 py-3 text-xs font-semibold transition-transform hover:scale-[1.01]"
           >
             <FiNavigation className="h-4 w-4" />
             Directions

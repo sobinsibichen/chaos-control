@@ -18,6 +18,7 @@ import {
 } from "@/lib/intelligence";
 import { queryKeys } from "@/lib/query-keys";
 import { createFallbackReplayRecord, fetchMonthlyReplay, fetchYearlyReplay, listSmokeReplay } from "@/lib/replayApi";
+import { buildPatternPredictionEngine } from "@/lib/pattern-prediction";
 
 function buildPredictionSeries(prediction: CravingPredictionRecord | undefined) {
   const map = new Map<number, number>();
@@ -391,6 +392,21 @@ export function useIntelligenceData() {
     }
     return buildHeatmap(analytics);
   }, [analytics, monthlyReplay]);
+  const patternPrediction = useMemo(
+    () => buildPatternPredictionEngine({
+      dashboard,
+      analytics,
+      smokeDna,
+      monthlyReplay,
+      yearlyReplay,
+      replayHistory,
+      cravingHistory,
+      liveCraving,
+      activity,
+      hourlyCraving,
+    }),
+    [activity, analytics, cravingHistory, dashboard, hourlyCraving, liveCraving, monthlyReplay, replayHistory, smokeDna, yearlyReplay],
+  );
 
   return {
     dashboard,
@@ -406,6 +422,7 @@ export function useIntelligenceData() {
     hourlyCraving,
     weeklyReplay,
     replayHeatmap,
+    patternPrediction,
     isReady: queriesEnabled,
     isLoading:
       dashboardQuery.isLoading ||

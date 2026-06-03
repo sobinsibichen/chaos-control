@@ -2,6 +2,7 @@ import type { ActivityRow, DashboardPayload } from "@/lib/intelligence";
 import type { SmokeDnaRecord } from "@/lib/intelligenceApi";
 import type { CravingPredictionRecord } from "@/lib/cravingApi";
 import type { SmokeReplayRecord } from "@/lib/replayApi";
+import type { PatternPredictionEngine } from "@/lib/pattern-prediction";
 
 export type InsightsTab = "Roast" | "Smoke DNA" | "Craving AI" | "Voice";
 
@@ -19,4 +20,5 @@ export interface InsightsSharedData {
   hourlyCraving: Array<{ hour: number; label: string; intensity: number }>;
   weeklyReplay: Array<{ day: string; value: number }>;
   replayHeatmap: Array<Array<{ key: string; intensity: number }>>;
+  patternPrediction: PatternPredictionEngine;
 }

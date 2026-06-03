@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { createFavoriteStore, deleteFavoriteStore, listFavoriteStores } from "@/lib/intelligenceApi";
+import { useAppStore } from "@/lib/app-store";
 import { withLoader } from "@/lib/loading-store";
 import { queryCacheTimes } from "@/lib/query-cache";
 import { queryKeys } from "@/lib/query-keys";
@@ -11,6 +12,7 @@ const DEFAULT_QUERY = "Convenience stores";
 
 export function useNearbyPlaces(ready: boolean) {
   const queryClient = useQueryClient();
+  const userId = useAppStore((state) => state.auth.user?.id);
   const [searchTerm, setSearchTerm] = useState(DEFAULT_QUERY);
   const [location, setLocation] = useState<LatLngLiteral | null>(null);
   const [stores, setStores] = useState<NearbyStore[]>([]);
@@ -20,8 +22,10 @@ export function useNearbyPlaces(ready: boolean) {
   const [error, setError] = useState("");
   const requestIdRef = useRef(0);
 
+  const favoriteStoresQueryKey = useMemo(() => queryKeys.favoriteStores(userId), [userId]);
+
   const favoriteStoresQuery = useQuery({
-    queryKey: queryKeys.favoriteStores,
+    queryKey: favoriteStoresQueryKey,
     queryFn: () => listFavoriteStores(100),
     ...queryCacheTimes.nearby,
   });
@@ -34,7 +38,7 @@ export function useNearbyPlaces(ready: boolean) {
   const saveFavoriteMutation = useMutation({
     mutationFn: createFavoriteStore,
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.favoriteStores });
+      void queryClient.invalidateQueries({ queryKey: favoriteStoresQueryKey });
     },
     onError: (mutationError) => {
       toast.error(mutationError instanceof Error ? mutationError.message : "Unable to save favorite store.");
@@ -44,7 +48,7 @@ export function useNearbyPlaces(ready: boolean) {
   const removeFavoriteMutation = useMutation({
     mutationFn: deleteFavoriteStore,
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.favoriteStores });
+      void queryClient.invalidateQueries({ queryKey: favoriteStoresQueryKey });
     },
     onError: (mutationError) => {
       toast.error(mutationError instanceof Error ? mutationError.message : "Unable to remove favorite store.");
@@ -155,7 +159,7 @@ export function useNearbyPlaces(ready: boolean) {
         return;
       }
 
-      queryClient.setQueryData(queryKeys.favoriteStores, previous ? {
+      queryClient.setQueryData(favoriteStoresQueryKey, previous ? {
         ...previous,
         items: previous.items.filter((item) => item.placeId !== placeId),
       } : previous);
@@ -163,7 +167,7 @@ export function useNearbyPlaces(ready: boolean) {
       try {
         await withLoader(() => removeFavoriteMutation.mutateAsync(existing.id), "Removing favorite...");
       } catch {
-        queryClient.setQueryData(queryKeys.favoriteStores, previous);
+        queryClient.setQueryData(favoriteStoresQueryKey, previous);
       }
       return;
     }
@@ -187,7 +191,7 @@ export function useNearbyPlaces(ready: boolean) {
       createdAt: new Date().toISOString(),
     };
 
-    queryClient.setQueryData(queryKeys.favoriteStores, previous ? {
+    queryClient.setQueryData(favoriteStoresQueryKey, previous ? {
       ...previous,
       items: [optimisticItem, ...previous.items],
     } : {
@@ -217,7 +221,7 @@ export function useNearbyPlaces(ready: boolean) {
         "Saving favorite...",
       );
     } catch {
-      queryClient.setQueryData(queryKeys.favoriteStores, previous);
+      queryClient.setQueryData(favoriteStoresQueryKey, previous);
     }
   };
 
@@ -228,6 +232,7 @@ export function useNearbyPlaces(ready: boolean) {
     stores,
     selectedStoreId,
     setSelectedStoreId,
+    favoriteStores: favoriteStoresQuery.data?.items ?? [],
     favoriteIds,
     toggleFavorite,
     locating,
