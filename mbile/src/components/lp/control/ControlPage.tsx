@@ -92,6 +92,7 @@ const CONTROL_CACHE_KEY = "last-puff-control-cache";
 const CONTROL_CACHE_STALE_MS = 5 * 60 * 1000;
 const CONTROL_PERMISSION_WIZARD_KEY = "last-puff-control-permission-wizard-complete";
 const CONTROL_ACCESSIBILITY_ATTEMPTED_KEY = "last-puff-accessibility-attempted";
+const CONTROL_RESTRICTED_SETTINGS_ATTEMPTED_KEY = "last-puff-restricted-settings-attempted";
 
 function formatTime24(hour: number, minute: number) {
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
@@ -176,6 +177,8 @@ function PermissionWizard({
   onComplete,
   accessibilityAttempted,
   onAccessibilityAttempt,
+  restrictedSettingsAttempted,
+  onRestrictedSettingsAttempt,
 }: {
   status: NativeProtectionStatus | null;
   open: boolean;
@@ -183,8 +186,11 @@ function PermissionWizard({
   onComplete: () => void;
   accessibilityAttempted: boolean;
   onAccessibilityAttempt: () => void;
+  restrictedSettingsAttempted: boolean;
+  onRestrictedSettingsAttempt: () => void;
 }) {
   const [started, setStarted] = useState(false);
+  const effectiveRestrictedSettingsAllowed = Boolean(status?.restrictedSettingsAllowed || restrictedSettingsAttempted);
   
   const nextStep = (() => {
     if (!open) {
@@ -197,7 +203,7 @@ function PermissionWizard({
       return "intro" as PermissionWizardStep;
     }
     if (!status.accessibilityEnabled || !status.accessibilityActive) {
-      if (!status.restrictedSettingsAllowed) {
+      if (!effectiveRestrictedSettingsAllowed) {
         return accessibilityAttempted ? "accessibility-permission-required" : "accessibility";
       }
       return "accessibility" as PermissionWizardStep;
@@ -262,7 +268,7 @@ function PermissionWizard({
   }
 
   const activeConfig =
-    nextStep === "accessibility" && accessibilityAttempted && status?.restrictedSettingsAllowed
+    nextStep === "accessibility" && (accessibilityAttempted || restrictedSettingsAttempted) && effectiveRestrictedSettingsAllowed
       ? {
           ...stepConfig.accessibility,
           description: "Restricted Settings is allowed now. Tap below to go to the Accessibility page and enable Last Puff.",
@@ -281,6 +287,7 @@ function PermissionWizard({
       return;
     }
     if (nextStep === "restricted") {
+      onRestrictedSettingsAttempt();
       void openNativeAppInfo();
       setTimeout(() => onRefresh(), 500);
       return;
@@ -292,6 +299,7 @@ function PermissionWizard({
       return;
     }
     if (nextStep === "accessibility-permission-required") {
+      onRestrictedSettingsAttempt();
       void openNativeAppInfo();
       setTimeout(() => onRefresh(), 500);
       return;
@@ -312,7 +320,7 @@ function PermissionWizard({
 
   const permissionRows = [
     ["Usage Access", Boolean(status?.usageAccessGranted)],
-    ["Restricted Settings", Boolean(status?.restrictedSettingsAllowed)],
+    ["Restricted Settings", effectiveRestrictedSettingsAllowed],
     ["Accessibility", Boolean(status?.accessibilityEnabled && status?.accessibilityActive)],
     ["Display Over Other Apps", Boolean(status?.overlayPermissionGranted)],
   ] as const;
@@ -479,6 +487,12 @@ export default function ControlPage() {
     }
     return window.localStorage.getItem(CONTROL_ACCESSIBILITY_ATTEMPTED_KEY) === "true";
   });
+  const [restrictedSettingsAttempted, setRestrictedSettingsAttempted] = useState(() => {
+    if (typeof window === "undefined") {
+      return false;
+    }
+    return window.localStorage.getItem(CONTROL_RESTRICTED_SETTINGS_ATTEMPTED_KEY) === "true";
+  });
   const hasLoadedRef = useRef(false);
   const controlCacheUpdatedAtRef = useRef(0);
   const installedAppsLoadedRef = useRef(false);
@@ -514,6 +528,13 @@ export default function ControlPage() {
     setAccessibilityAttempted(true);
     if (typeof window !== "undefined") {
       window.localStorage.setItem(CONTROL_ACCESSIBILITY_ATTEMPTED_KEY, "true");
+    }
+  }, []);
+
+  const markRestrictedSettingsAttempted = useCallback(() => {
+    setRestrictedSettingsAttempted(true);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(CONTROL_RESTRICTED_SETTINGS_ATTEMPTED_KEY, "true");
     }
   }, []);
 
@@ -1055,6 +1076,8 @@ export default function ControlPage() {
         onComplete={completePermissionWizard}
         accessibilityAttempted={accessibilityAttempted}
         onAccessibilityAttempt={markAccessibilityAttempted}
+        restrictedSettingsAttempted={restrictedSettingsAttempted}
+        onRestrictedSettingsAttempt={markRestrictedSettingsAttempted}
       />
       <div className="mb-6">
         <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Protection</div>

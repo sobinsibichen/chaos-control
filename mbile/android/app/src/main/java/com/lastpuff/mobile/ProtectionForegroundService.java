@@ -121,7 +121,7 @@ public class ProtectionForegroundService extends Service {
         String status = BlockingEngine.isWithinBlockedWindow(this) ? "Blocking active" : "Watching schedule";
 
         return new NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_last_puff_notification)
+            .setSmallIcon(R.mipmap.ic_launcher)
             .setLargeIcon(BitmapFactory.decodeResource(getResources(), R.mipmap.ic_launcher))
             .setContentTitle("Last Puff protection running")
             .setContentText(blockWindow + " - " + status)

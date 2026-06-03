@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import toast from "react-hot-toast";
-import { createFavoriteStore, deleteFavoriteStore, listFavoriteStores } from "@/lib/intelligenceApi";
+import { createFavoriteStore, deleteFavoriteStore, listFavoriteStores, type FavoriteStoreRecord } from "@/lib/intelligenceApi";
 import { useAppStore } from "@/lib/app-store";
 import { withLoader } from "@/lib/loading-store";
 import { queryCacheTimes } from "@/lib/query-cache";
@@ -9,6 +8,31 @@ import { queryKeys } from "@/lib/query-keys";
 import { buildDirectionsUrl, type LatLngLiteral, type NearbyStore, searchNearbyStores } from "@/services/googlePlaces";
 
 const DEFAULT_QUERY = "Convenience stores";
+
+function localFavoritesKey(userId: string | number | null | undefined) {
+  return `last-puff-favorite-stores-${String(userId ?? "anonymous")}`;
+}
+
+function readLocalFavorites(userId: string | number | null | undefined) {
+  if (typeof window === "undefined") {
+    return [] as FavoriteStoreRecord[];
+  }
+
+  try {
+    const raw = window.localStorage.getItem(localFavoritesKey(userId));
+    return raw ? (JSON.parse(raw) as FavoriteStoreRecord[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeLocalFavorites(userId: string | number | null | undefined, favorites: FavoriteStoreRecord[]) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.setItem(localFavoritesKey(userId), JSON.stringify(favorites.slice(0, 100)));
+}
 
 export function useNearbyPlaces(ready: boolean) {
   const queryClient = useQueryClient();
@@ -20,6 +44,7 @@ export function useNearbyPlaces(ready: boolean) {
   const [locating, setLocating] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [localFavorites, setLocalFavorites] = useState<FavoriteStoreRecord[]>(() => readLocalFavorites(userId));
   const requestIdRef = useRef(0);
 
   const favoriteStoresQueryKey = useMemo(() => queryKeys.favoriteStores(userId), [userId]);
@@ -30,9 +55,24 @@ export function useNearbyPlaces(ready: boolean) {
     ...queryCacheTimes.nearby,
   });
 
+  useEffect(() => {
+    setLocalFavorites(readLocalFavorites(userId));
+  }, [userId]);
+
+  useEffect(() => {
+    writeLocalFavorites(userId, localFavorites);
+  }, [localFavorites, userId]);
+
+  const favoriteStores = useMemo(() => {
+    const merged = new Map<string, FavoriteStoreRecord>();
+    localFavorites.forEach((item) => merged.set(item.placeId, item));
+    (favoriteStoresQuery.data?.items ?? []).forEach((item) => merged.set(item.placeId, item));
+    return [...merged.values()].sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
+  }, [favoriteStoresQuery.data?.items, localFavorites]);
+
   const favoriteIds = useMemo(
-    () => new Set((favoriteStoresQuery.data?.items ?? []).map((item) => item.placeId)),
-    [favoriteStoresQuery.data?.items],
+    () => new Set(favoriteStores.map((item) => item.placeId)),
+    [favoriteStores],
   );
 
   const saveFavoriteMutation = useMutation({
@@ -41,7 +81,7 @@ export function useNearbyPlaces(ready: boolean) {
       void queryClient.invalidateQueries({ queryKey: favoriteStoresQueryKey });
     },
     onError: (mutationError) => {
-      toast.error(mutationError instanceof Error ? mutationError.message : "Unable to save favorite store.");
+      console.warn("[nearby-favorites] Server save failed; local favorite retained.", mutationError);
     },
   });
 
@@ -51,7 +91,7 @@ export function useNearbyPlaces(ready: boolean) {
       void queryClient.invalidateQueries({ queryKey: favoriteStoresQueryKey });
     },
     onError: (mutationError) => {
-      toast.error(mutationError instanceof Error ? mutationError.message : "Unable to remove favorite store.");
+      console.warn("[nearby-favorites] Server remove failed; local favorite removed.", mutationError);
     },
   });
 
@@ -152,27 +192,28 @@ export function useNearbyPlaces(ready: boolean) {
     }
 
     const previous = favoriteStoresQuery.data;
+    const previousLocal = localFavorites;
 
     if (favoriteIds.has(placeId)) {
-      const existing = favoriteStoresQuery.data?.items.find((item) => item.placeId === placeId);
-      if (!existing) {
-        return;
-      }
+      const existing = favoriteStores.find((item) => item.placeId === placeId);
 
       queryClient.setQueryData(favoriteStoresQueryKey, previous ? {
         ...previous,
         items: previous.items.filter((item) => item.placeId !== placeId),
       } : previous);
+      setLocalFavorites((current) => current.filter((item) => item.placeId !== placeId));
 
       try {
-        await withLoader(() => removeFavoriteMutation.mutateAsync(existing.id), "Removing favorite...");
-      } catch {
-        queryClient.setQueryData(favoriteStoresQueryKey, previous);
+        if (existing && existing.id > 0) {
+          await removeFavoriteMutation.mutateAsync(existing.id);
+        }
+      } catch (removeError) {
+        console.warn("[nearby-favorites] Favorite removed locally, server remove pending.", removeError);
       }
       return;
     }
 
-    const optimisticItem = {
+    const optimisticItem: FavoriteStoreRecord = {
       id: Date.now(),
       placeId: store.placeId,
       storeName: store.name,
@@ -198,30 +239,29 @@ export function useNearbyPlaces(ready: boolean) {
       items: [optimisticItem],
       pagination: { page: 1, limit: 100, total: 1, totalPages: 1 },
     });
+    setLocalFavorites((current) => [optimisticItem, ...current.filter((item) => item.placeId !== placeId)]);
 
     try {
-      await withLoader(
-        () =>
-          saveFavoriteMutation.mutateAsync({
-            placeId: store.placeId,
-            storeName: store.name,
-            address: store.address,
-            phoneNumber: store.phoneNumber,
-            mapsUrl: buildDirectionsUrl(store),
-            rating: store.rating ?? null,
-            isOpen: store.isOpen,
-            latitude: store.location.lat,
-            longitude: store.location.lng,
-            metadata: {
-              image: store.photoUrl,
-              matchedKeyword: store.matchedKeyword,
-              distanceMeters: store.distanceMeters,
-            },
-          }),
-        "Saving favorite...",
-      );
-    } catch {
-      queryClient.setQueryData(favoriteStoresQueryKey, previous);
+      const saved = await saveFavoriteMutation.mutateAsync({
+        placeId: store.placeId,
+        storeName: store.name,
+        address: store.address,
+        phoneNumber: store.phoneNumber,
+        mapsUrl: buildDirectionsUrl(store),
+        rating: store.rating ?? null,
+        isOpen: store.isOpen,
+        latitude: store.location.lat,
+        longitude: store.location.lng,
+        metadata: {
+          image: store.photoUrl,
+          matchedKeyword: store.matchedKeyword,
+          distanceMeters: store.distanceMeters,
+        },
+      });
+      setLocalFavorites((current) => [saved, ...current.filter((item) => item.placeId !== saved.placeId)]);
+    } catch (saveError) {
+      setLocalFavorites(previousLocal.some((item) => item.placeId === placeId) ? previousLocal : [optimisticItem, ...previousLocal]);
+      console.warn("[nearby-favorites] Favorite saved locally; server sync can retry later.", saveError);
     }
   };
 
@@ -232,12 +272,12 @@ export function useNearbyPlaces(ready: boolean) {
     stores,
     selectedStoreId,
     setSelectedStoreId,
-    favoriteStores: favoriteStoresQuery.data?.items ?? [],
+    favoriteStores,
     favoriteIds,
     toggleFavorite,
     locating,
     loading,
-    error: error || (favoriteStoresQuery.error instanceof Error ? favoriteStoresQuery.error.message : ""),
+    error,
     locate,
   };
 }

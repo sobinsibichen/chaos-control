@@ -95,18 +95,49 @@ function calendarDailyCounts(input: EngineInput) {
       date: new Date(entry.day || Date.now() - (input.monthlyReplay!.analytics.calendarHeatmap.length - index) * 86_400_000),
       count: Math.max(0, Number(entry.total) || 0),
     }))
-    .filter((entry) => Number.isFinite(entry.date.getTime())) ?? [];
+    .filter((entry) => Number.isFinite(entry.date.getTime()) && entry.count > 0) ?? [];
 
   if (fromMonthly.length) return fromMonthly;
 
-  const fromActivity = input.activity
-    .map((item) => ({ date: new Date(item.created_at), count: parseActivityCount(item) }))
-    .filter((entry) => Number.isFinite(entry.date.getTime()) && entry.count > 0);
+  const activityByDay = new Map<string, { date: Date; count: number }>();
+  input.activity.forEach((item) => {
+    const date = new Date(item.created_at);
+    const count = parseActivityCount(item);
+    if (!Number.isFinite(date.getTime()) || count <= 0) {
+      return;
+    }
+
+    const key = date.toISOString().slice(0, 10);
+    const existing = activityByDay.get(key);
+    activityByDay.set(key, {
+      date,
+      count: (existing?.count ?? 0) + count,
+    });
+  });
+  const fromActivity = [...activityByDay.values()];
 
   if (fromActivity.length) return fromActivity;
 
   const today = input.dashboard?.stats.todayCount ?? 0;
-  return today > 0 ? [{ date: new Date(), count: today }] : [];
+  const average = Math.max(0, input.dashboard?.stats.dailySmokingAverage ?? input.analytics?.dailyAverage ?? 0);
+  const monthly = input.analytics?.monthlyCigarettes ?? [];
+  const monthlyPeak = Math.max(...monthly, 0);
+  if (today > 0 || average > 0 || monthlyPeak > 0) {
+    const base = today > 0 ? today : average;
+    const start = new Date();
+    return Array.from({ length: 7 }, (_, index) => {
+      const date = new Date(start);
+      date.setDate(start.getDate() - (6 - index));
+      const monthSignal = monthly.length ? monthly[date.getMonth()] / Math.max(monthlyPeak, 1) : 0.5;
+      const recency = index === 6 && today > 0 ? today : base * (0.82 + monthSignal * 0.36);
+      return {
+        date,
+        count: Math.max(0, Number(recency.toFixed(2))),
+      };
+    });
+  }
+
+  return [];
 }
 
 function getTriggerStats(input: EngineInput) {
@@ -153,14 +184,22 @@ export function buildPatternPredictionEngine(input: EngineInput): PatternPredict
   const dailyCounts = calendarDailyCounts(input).sort((a, b) => a.date.getTime() - b.date.getTime());
   const values = dailyCounts.map((entry) => entry.count);
   const dataDays = dailyCounts.length;
-  const hasPredictionData = dataDays >= 7;
+  const liveSignals =
+    dataDays > 0 ||
+    Boolean(input.dashboard) ||
+    Boolean(input.analytics) ||
+    input.cravingHistory.length > 0 ||
+    Boolean(input.liveCraving) ||
+    Boolean(input.smokeDna);
+  const hasPredictionData = dataDays >= 3 || liveSignals;
   const recent7 = values.slice(-7);
   const previous7 = values.slice(-14, -7);
-  const recentAverage = recent7.length ? recent7.reduce((sum, value) => sum + value, 0) / recent7.length : (input.analytics?.dailyAverage ?? 0);
+  const recentAverage = recent7.length ? recent7.reduce((sum, value) => sum + value, 0) / recent7.length : (input.analytics?.dailyAverage ?? input.dashboard?.stats.dailySmokingAverage ?? 0);
   const previousAverage = previous7.length ? previous7.reduce((sum, value) => sum + value, 0) / previous7.length : recentAverage;
   const improvementPercent = previousAverage > 0 ? Math.round(((previousAverage - recentAverage) / previousAverage) * 100) : 0;
   const slope = linearRegressionSlope(values.slice(-30));
-  const tomorrow = Math.max(0, weightedMovingAverage(recent7.length ? recent7 : values) + slope);
+  const fallbackTomorrow = Math.max(input.dashboard?.stats.todayCount ?? 0, input.analytics?.dailyAverage ?? 0, input.dashboard?.stats.dailySmokingAverage ?? 0);
+  const tomorrow = Math.max(0, (recent7.length || values.length ? weightedMovingAverage(recent7.length ? recent7 : values) : fallbackTomorrow) + slope);
   const forecast7 = Array.from({ length: 7 }, (_, index) => Math.max(0, tomorrow + slope * index));
   const forecast30 = Array.from({ length: 30 }, (_, index) => Math.max(0, tomorrow + slope * index));
   const price = input.dashboard?.stats.cigarettePrice ?? input.analytics?.cigarettePrice ?? 0;
@@ -233,19 +272,19 @@ export function buildPatternPredictionEngine(input: EngineInput): PatternPredict
     {
       title: "Tomorrow",
       value: hasPredictionData ? `${tomorrow.toFixed(1)} cigarettes` : "Needs data",
-      detail: hasPredictionData ? "Weighted moving average plus trend slope." : "Need at least 7 days of data for accurate predictions.",
+      detail: dataDays >= 7 ? "Weighted moving average plus trend slope." : "Estimated from your current dashboard, analytics, and craving signals.",
       available: hasPredictionData,
     },
     {
       title: "7-Day Forecast",
       value: hasPredictionData ? `${Math.round(forecast7.reduce((sum, value) => sum + value, 0))} cigarettes` : "Needs data",
-      detail: hasPredictionData ? "Linear trend projected across the next week." : "Need at least 7 days of data for accurate predictions.",
+      detail: dataDays >= 7 ? "Linear trend projected across the next week." : "Short-range estimate from your logged-in user data.",
       available: hasPredictionData,
     },
     {
       title: "30-Day Forecast",
       value: hasPredictionData ? `${Math.round(forecast30.reduce((sum, value) => sum + value, 0))} cigarettes` : "Needs data",
-      detail: hasPredictionData ? "Regression-based month projection from recent history." : "Need at least 7 days of data for accurate predictions.",
+      detail: dataDays >= 7 ? "Regression-based month projection from recent history." : "Uses your current average, today count, and monthly signals until more daily history exists.",
       available: hasPredictionData,
     },
     {
@@ -295,7 +334,7 @@ export function buildPatternPredictionEngine(input: EngineInput): PatternPredict
     behaviorProfile: profile,
     dataDays,
     hasPredictionData,
-    insufficientMessage: "Need at least 7 days of data for accurate predictions.",
+    insufficientMessage: liveSignals ? "Predictions are live but confidence improves after 7 dated smoking logs." : "Log cigarettes to generate accurate predictions.",
     patternCards,
     forecastCards,
     aiInsights,
@@ -314,6 +353,6 @@ export function buildPatternPredictionEngine(input: EngineInput): PatternPredict
       improvementPercent,
       triggerLoad: Math.round(triggerLoad),
     },
-    explanation: "Calculated from dashboard stats, smoke replay history, craving predictions, Smoke DNA triggers, and recent activity logs.",
+    explanation: `Calculated for the logged-in user from dashboard stats, smoke replay history, craving predictions, Smoke DNA triggers, and recent activity logs. Confidence: ${dataDays >= 7 ? "dated history" : "limited live user signals"}.`,
   };
 }
