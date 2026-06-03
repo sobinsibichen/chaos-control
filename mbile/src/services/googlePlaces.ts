@@ -19,6 +19,7 @@ export interface NearbyStore {
 
 const DEFAULT_RADIUS_METERS = 5000;
 const MAX_RESULTS = 12;
+const FALLBACK_RESULT_LIMIT = 6;
 
 const SEARCH_ALIASES: Array<{ match: RegExp; keywords: string[] }> = [
   { match: /(smoke|cigarette|tobacco)/i, keywords: ["smoke shop", "tobacco store", "vape store", "convenience store"] },
@@ -78,6 +79,11 @@ function buildMapsUrl(place: google.maps.places.PlaceResult, location: LatLngLit
   }
 
   return `https://www.google.com/maps/search/?api=1&query=${location.lat},${location.lng}&query_place_id=${place.place_id ?? ""}`;
+}
+
+function buildMapsSearchUrl(query: string, location: LatLngLiteral) {
+  const encodedQuery = encodeURIComponent(query);
+  return `https://www.google.com/maps/search/?api=1&query=${encodedQuery}&center=${location.lat},${location.lng}`;
 }
 
 function getPhotoUrl(place: google.maps.places.PlaceResult) {
@@ -147,6 +153,27 @@ function createService() {
   return new google.maps.places.PlacesService(document.createElement("div"));
 }
 
+function buildFallbackStores(location: LatLngLiteral, query: string, keywords: string[]): NearbyStore[] {
+  return uniqueKeywords([query, ...keywords])
+    .slice(0, FALLBACK_RESULT_LIMIT)
+    .map((keyword, index) => {
+      const searchLabel = keyword.toLowerCase().includes("near me") ? keyword : `${keyword} near me`;
+      return {
+        placeId: `maps-search-${index}-${searchLabel.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+        name: searchLabel.replace(/\b\w/g, (letter) => letter.toUpperCase()),
+        address: "Open matching places in Google Maps",
+        phoneNumber: null,
+        rating: null,
+        isOpen: null,
+        photoUrl: null,
+        mapsUrl: buildMapsSearchUrl(searchLabel, location),
+        location,
+        distanceMeters: 0,
+        matchedKeyword: keyword,
+      } satisfies NearbyStore;
+    });
+}
+
 export async function searchNearbyStores(options: {
   location: LatLngLiteral;
   query: string;
@@ -160,17 +187,25 @@ export async function searchNearbyStores(options: {
   const radius = options.radiusMeters ?? DEFAULT_RADIUS_METERS;
   const keywords = expandSearchKeywords(options.query);
 
-  const allResults = await Promise.all(
-    keywords.map(async (keyword) => {
-      const results = await nearbySearch(service, {
-        location: options.location,
-        radius,
-        keyword,
-      });
+  let allResults: Array<Array<{ keyword: string; result: google.maps.places.PlaceResult }>>;
+  try {
+    allResults = await Promise.all(
+      keywords.map(async (keyword) => {
+        const results = await nearbySearch(service, {
+          location: options.location,
+          radius,
+          keyword,
+        });
 
-      return results.map((result) => ({ keyword, result }));
-    }),
-  );
+        return results.map((result) => ({ keyword, result }));
+      }),
+    );
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("REQUEST_DENIED")) {
+      return buildFallbackStores(options.location, options.query, keywords);
+    }
+    throw error;
+  }
 
   const deduped = new Map<string, { keyword: string; result: google.maps.places.PlaceResult }>();
   for (const group of allResults) {
@@ -242,5 +277,9 @@ export function formatDistance(distanceMeters: number) {
 }
 
 export function buildDirectionsUrl(store: NearbyStore) {
+  if (store.placeId.startsWith("maps-search-")) {
+    return store.mapsUrl;
+  }
+
   return `https://www.google.com/maps/dir/?api=1&destination=${store.location.lat},${store.location.lng}&destination_place_id=${store.placeId}`;
 }

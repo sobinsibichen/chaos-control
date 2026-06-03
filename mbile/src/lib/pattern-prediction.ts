@@ -191,7 +191,7 @@ export function buildPatternPredictionEngine(input: EngineInput): PatternPredict
     input.cravingHistory.length > 0 ||
     Boolean(input.liveCraving) ||
     Boolean(input.smokeDna);
-  const hasPredictionData = dataDays >= 3 || liveSignals;
+  const hasPredictionData = dataDays >= 3 || Boolean(input.dashboard) || Boolean(input.analytics);
   const recent7 = values.slice(-7);
   const previous7 = values.slice(-14, -7);
   const recentAverage = recent7.length ? recent7.reduce((sum, value) => sum + value, 0) / recent7.length : (input.analytics?.dailyAverage ?? input.dashboard?.stats.dailySmokingAverage ?? 0);
@@ -238,20 +238,22 @@ export function buildPatternPredictionEngine(input: EngineInput): PatternPredict
   const patternCards: PatternCard[] = [
     {
       title: "Peak Risk Time",
-      value: `${formatHour(peak.hour)} - ${formatHour((peak.hour + 2) % 24)}`,
-      detail: `${Math.round(peak.intensity)}% risk from logged craving and usage signals.`,
+      value: peak.intensity > 0 ? `${formatHour(peak.hour)} - ${formatHour((peak.hour + 2) % 24)}` : "Needs logs",
+      detail: peak.intensity > 0 ? `${Math.round(peak.intensity)}% risk from logged craving and usage signals.` : "Log cravings or cigarettes to detect the real peak risk time.",
       confidence: input.liveCraving || input.cravingHistory.length ? "Live" : "Limited",
     },
     {
       title: "Weekend Smoking Increase",
-      value: `${Math.max(0, Math.round(((weekendAverage - weekdayAverage) / Math.max(weekdayAverage, 1)) * 100))}%`,
-      detail: weekendAverage > weekdayAverage ? "Weekend logs are higher than weekday logs." : "Weekends are not currently higher than weekdays.",
+      value: dataDays >= 14 ? `${Math.max(0, Math.round(((weekendAverage - weekdayAverage) / Math.max(weekdayAverage, 1)) * 100))}%` : "Needs 14 days",
+      detail: dataDays >= 14
+        ? (weekendAverage > weekdayAverage ? "Weekend logs are higher than weekday logs." : "Weekends are not currently higher than weekdays.")
+        : "Two weeks of dated logs are needed for a reliable weekend comparison.",
       confidence: dataDays >= 14 ? "Strong" : "Limited",
     },
     {
       title: "Longest Smoke-Free Window",
-      value: `${Math.floor(longestSeconds / 3600)}h`,
-      detail: `Average smoke-free gap is about ${averageSmokeFreeHours.toFixed(1)}h from your baseline.`,
+      value: longestSeconds > 0 ? `${Math.floor(longestSeconds / 3600)}h` : "Needs logs",
+      detail: longestSeconds > 0 ? `Average smoke-free gap is about ${averageSmokeFreeHours.toFixed(1)}h from your baseline.` : "Start logging to calculate your longest smoke-free window.",
       confidence: longestSeconds > 0 ? "Live" : "Limited",
     },
     {
@@ -262,8 +264,8 @@ export function buildPatternPredictionEngine(input: EngineInput): PatternPredict
     },
     {
       title: "Improvement Trend",
-      value: `${improvementPercent >= 0 ? "-" : "+"}${Math.abs(improvementPercent)}%`,
-      detail: "Compares the last 7 logged days against the previous 7.",
+      value: dataDays >= 14 ? `${improvementPercent >= 0 ? "-" : "+"}${Math.abs(improvementPercent)}%` : "Needs 14 days",
+      detail: dataDays >= 14 ? "Compares the last 7 logged days against the previous 7." : "Fourteen dated smoking logs are needed for an accurate trend.",
       confidence: dataDays >= 14 ? "Strong" : "Limited",
     },
   ];

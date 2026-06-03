@@ -163,10 +163,8 @@ public final class BlockingEngine {
     }
 
     public static boolean hasRequiredBlockingPermissions(Context context) {
-        return isUsageAccessGranted(context)
-            && isRestrictedSettingsAllowed(context)
-            && isAccessibilityServiceEnabled(context)
-            && isOverlayPermissionGranted(context);
+        return isRestrictedSettingsAllowed(context)
+            && isAccessibilityServiceEnabled(context);
     }
 
     public static void syncProtection(Context context) {
@@ -327,7 +325,14 @@ public final class BlockingEngine {
         intent.putExtra("packageName", packageName);
         intent.putExtra("appName", resolveAppName(context, packageName));
         intent.putExtra("reason", reason);
-        context.startActivity(intent);
+        try {
+            BlockingRepository.setOverlayVisible(context, true);
+            BlockingRepository.setLastBlockedPackage(context, packageName);
+            BlockingRepository.setLastOverlayTriggerAt(context, System.currentTimeMillis());
+            context.startActivity(intent);
+        } catch (Exception error) {
+            Log.e(TAG, "Unable to launch block screen", error);
+        }
     }
 
     public static void maybeBlockForegroundPackage(Context context, String packageName, String source) {

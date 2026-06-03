@@ -655,16 +655,8 @@ export default function ControlPage() {
     setErrorMessage("");
     setScheduleSuccessMessage("Saved successfully.");
 
-    enqueueBackgroundSync("save-block-schedule", async () => {
-      await apiRequest("/api/apps/schedule", {
-        method: "POST",
-        body: JSON.stringify({
-          blockTime: nextBlockTime,
-          frequency: "daily",
-          enabled: true,
-        }),
-      });
-      if (isNativeAndroid()) {
+    if (isNativeAndroid()) {
+      try {
         const status = await syncNativeProtectionConfig({
           apps: apps.map((app) => ({
             appName: app.app_name,
@@ -680,7 +672,22 @@ export default function ControlPage() {
           repeatType: "daily",
         });
         setNativeProtectionStatus(status);
+      } catch (error) {
+        setErrorMessage(error instanceof Error ? error.message : "Unable to save native blocking schedule.");
+        setSavingSchedule(false);
+        return;
       }
+    }
+
+    enqueueBackgroundSync("save-block-schedule", async () => {
+      await apiRequest("/api/apps/schedule", {
+        method: "POST",
+        body: JSON.stringify({
+          blockTime: nextBlockTime,
+          frequency: "daily",
+          enabled: true,
+        }),
+      });
       setSavingSchedule(false);
     });
   };
