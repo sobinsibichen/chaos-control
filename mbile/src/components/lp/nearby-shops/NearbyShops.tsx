@@ -37,11 +37,14 @@ function LoadingCard() {
 }
 
 export function NearbyShops() {
-  const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+  const apiKey = String(import.meta.env.VITE_GOOGLE_MAPS_API_KEY ?? "").trim();
+  const hasGoogleMapsKey = apiKey.length > 0 && !apiKey.includes("YOUR_") && !apiKey.includes("REPLACE_");
   const { isLoaded, loadError } = useJsApiLoader({
     id: "last-puff-nearby-stores-map",
-    googleMapsApiKey: apiKey ?? "",
+    googleMapsApiKey: hasGoogleMapsKey ? apiKey : "",
     libraries,
+    // Required when the key is restricted by HTTP referrer in Google Cloud.
+    authReferrerPolicy: "origin",
   });
 
   const {
@@ -58,7 +61,7 @@ export function NearbyShops() {
     loading,
     error,
     locate,
-  } = useNearbyPlaces(Boolean(apiKey) && isLoaded);
+  } = useNearbyPlaces(hasGoogleMapsKey && isLoaded && !loadError);
 
   const selectedStore = useMemo(
     () => stores.find((store) => store.placeId === selectedStoreId) ?? null,
@@ -154,7 +157,7 @@ export function NearbyShops() {
           </div>
         </div>
 
-        {!apiKey ? (
+        {!hasGoogleMapsKey ? (
           <div className="rounded-[2rem] border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900">
             Add `VITE_GOOGLE_MAPS_API_KEY` to your environment to use Nearby Stores.
           </div>
@@ -186,7 +189,7 @@ export function NearbyShops() {
             </button>
           </div>
 
-          {isLoaded ? (
+          {isLoaded && !loadError ? (
             <GoogleMapView
               currentLocation={location}
               stores={stores}
@@ -197,8 +200,10 @@ export function NearbyShops() {
           ) : (
             <div className="flex h-[24rem] items-center justify-center rounded-[2rem] border border-black/5 bg-white shadow-[0_28px_60px_rgba(15,23,42,0.08)]">
               <div className="space-y-3 text-center">
-                <div className="mx-auto h-12 w-12 animate-spin rounded-full border-4 border-slate-200 border-t-slate-900" />
-                <div className="text-sm font-medium text-slate-600">Loading interactive map...</div>
+                {loadError ? <FiMapPin className="mx-auto h-8 w-8 text-rose-500" /> : <div className="mx-auto h-12 w-12 animate-spin rounded-full border-4 border-slate-200 border-t-slate-900" />}
+                <div className="text-sm font-medium text-slate-600">
+                  {loadError ? "Map unavailable until the Google API key is fixed." : "Loading interactive map..."}
+                </div>
               </div>
             </div>
           )}

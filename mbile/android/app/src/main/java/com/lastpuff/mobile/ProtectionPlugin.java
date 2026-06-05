@@ -1,6 +1,8 @@
 package com.lastpuff.mobile;
 
 import android.Manifest;
+import android.app.admin.DevicePolicyManager;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -30,6 +32,7 @@ import org.json.JSONObject;
 @CapacitorPlugin(name = "Protection")
 public class ProtectionPlugin extends Plugin {
     private static final String DEFAULT_REPEAT_TYPE = "daily";
+    private static final int REQUEST_ENABLE_DEVICE_ADMIN = 4210;
 
     private PluginCall pendingTimePickerCall;
     private Integer pendingStartHour;
@@ -198,6 +201,55 @@ public class ProtectionPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void enableUninstallProtection(PluginCall call) {
+        if (isDeviceAdminActive()) {
+            call.resolve(buildStatus());
+            return;
+        }
+
+        Intent intent = new Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN);
+        intent.putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, adminComponent());
+        intent.putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, "Last Puff needs this to block uninstall until the challenge is completed.");
+        if (getActivity() != null) {
+            getActivity().startActivityForResult(intent, REQUEST_ENABLE_DEVICE_ADMIN);
+        } else {
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(intent);
+        }
+        call.resolve(buildStatus());
+    }
+
+    @PluginMethod
+    public void disableUninstallProtectionAfterChallenge(PluginCall call) {
+        DevicePolicyManager manager = devicePolicyManager();
+        ComponentName component = adminComponent();
+        // Only the completed challenge path calls this, temporarily removing the uninstall block.
+        if (manager != null && manager.isAdminActive(component)) {
+            manager.removeActiveAdmin(component);
+        }
+        setUninstallChallengePending(false);
+        call.resolve(buildStatus());
+    }
+
+    @PluginMethod
+    public void openDeviceAdminSettings(PluginCall call) {
+        Intent intent = new Intent(Settings.ACTION_SECURITY_SETTINGS);
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        getContext().startActivity(intent);
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void openAppUninstallAfterChallenge(PluginCall call) {
+        Intent intent = new Intent(Intent.ACTION_UNINSTALL_PACKAGE);
+        intent.setData(Uri.parse("package:" + getContext().getPackageName()));
+        intent.putExtra(Intent.EXTRA_RETURN_RESULT, false);
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        getContext().startActivity(intent);
+        call.resolve();
+    }
+
+    @PluginMethod
     public void checkNotificationPermission(PluginCall call) {
         JSObject result = new JSObject();
         result.put("granted", NotificationHelper.hasNotificationPermission(getContext()));
@@ -303,7 +355,37 @@ public class ProtectionPlugin extends Plugin {
         status.put("overlayVisible", BlockingRepository.isOverlayVisible(getContext()));
         status.put("blockWindowLabel", BlockingRepository.getBlockWindowLabel(getContext()));
         status.put("protectionActive", schedule.protectionActive);
+        status.put("deviceAdminActive", isDeviceAdminActive());
+        status.put("uninstallProtectionAvailable", true);
+        status.put("uninstallChallengePending", isUninstallChallengePending());
         return status;
+    }
+
+    private ComponentName adminComponent() {
+        return new ComponentName(getContext(), LastPuffDeviceAdminReceiver.class);
+    }
+
+    private DevicePolicyManager devicePolicyManager() {
+        return (DevicePolicyManager) getContext().getSystemService(Context.DEVICE_POLICY_SERVICE);
+    }
+
+    private boolean isDeviceAdminActive() {
+        DevicePolicyManager manager = devicePolicyManager();
+        return manager != null && manager.isAdminActive(adminComponent());
+    }
+
+    private boolean isUninstallChallengePending() {
+        return getContext()
+            .getSharedPreferences(LastPuffDeviceAdminReceiver.PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(LastPuffDeviceAdminReceiver.KEY_UNINSTALL_CHALLENGE_PENDING, false);
+    }
+
+    private void setUninstallChallengePending(boolean pending) {
+        getContext()
+            .getSharedPreferences(LastPuffDeviceAdminReceiver.PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(LastPuffDeviceAdminReceiver.KEY_UNINSTALL_CHALLENGE_PENDING, pending)
+            .apply();
     }
 
     private int countActiveApps(String rawApps) {

@@ -6,6 +6,7 @@
     <string name="custom_url_scheme">com.lastpuff.mobile</string>
     <string name="accessibility_service_description">Blocks selected apps after the scheduled time until you complete the unlock challenge.</string>
     <string name="accessibility_service_summary">Last Puff app protection</string>
+    <string name="device_admin_description">Prevents uninstall until the Last Puff challenge is completed.</string>
     <string name="block_screen_quote">Freedom is easier to keep than to rebuild.</string>
     <string name="blocking_channel_name">Last Puff protection</string>
     <string name="blocking_channel_description">Keeps app blocking alive in the background.</string>

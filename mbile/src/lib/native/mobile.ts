@@ -32,6 +32,10 @@ interface ProtectionPlugin {
   openOverlaySettings(): Promise<void>;
   openUsageAccessSettings(): Promise<void>;
   requestIgnoreBatteryOptimizations(): Promise<NativeProtectionStatus>;
+  enableUninstallProtection(): Promise<NativeProtectionStatus>;
+  disableUninstallProtectionAfterChallenge(): Promise<NativeProtectionStatus>;
+  openDeviceAdminSettings(): Promise<void>;
+  openAppUninstallAfterChallenge(): Promise<void>;
   checkNotificationPermission(): Promise<{ granted: boolean }>;
   requestNotificationPermission(): Promise<{ granted: boolean }>;
   sendTestNotification(options?: { title?: string; body?: string }): Promise<{ delivered: boolean }>;
@@ -60,6 +64,9 @@ export interface NativeProtectionStatus {
   nextAlarmAt?: number;
   foregroundPackage?: string;
   protectionActive?: boolean;
+  deviceAdminActive?: boolean;
+  uninstallProtectionAvailable?: boolean;
+  uninstallChallengePending?: boolean;
   lastBlockedApp?: string;
   lastOverlayTriggerTime?: number;
   overlayVisible?: boolean;
@@ -206,6 +213,39 @@ export async function requestNativeBatteryOptimizationExemption() {
 
   return Protection.requestIgnoreBatteryOptimizations();
 }
+
+export async function enableNativeUninstallProtection() {
+  if (!isNativeAndroid()) {
+    return null;
+  }
+
+  return Protection.enableUninstallProtection();
+}
+
+export async function disableNativeUninstallProtectionAfterChallenge() {
+  if (!isNativeAndroid()) {
+    return null;
+  }
+
+  return Protection.disableUninstallProtectionAfterChallenge();
+}
+
+export async function openNativeDeviceAdminSettings() {
+  if (!isNativeAndroid()) {
+    return;
+  }
+
+  await Protection.openDeviceAdminSettings();
+}
+
+export async function openNativeAppUninstallAfterChallenge() {
+  if (!isNativeAndroid()) {
+    return;
+  }
+
+  await Protection.openAppUninstallAfterChallenge();
+}
+
 
 export async function ensureNativeNotificationPermission() {
   if (!isNativeAndroid()) {

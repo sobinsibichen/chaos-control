@@ -17,6 +17,7 @@ import {
   ShoppingCart,
   TriangleAlert,
   Video,
+  X,
 } from "lucide-react";
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -31,9 +32,11 @@ import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 import {
   getInstalledApps,
   getNativeProtectionStatus,
+  enableNativeUninstallProtection,
   isNativeAndroid,
   openNativeAppInfo,
   openNativeAccessibilitySettings,
+  openNativeDeviceAdminSettings,
   openNativeOverlaySettings,
   openNativeUsageAccessSettings,
   relockNativeProtection,
@@ -168,13 +171,18 @@ function isProtectionReady(status: NativeProtectionStatus | null) {
   );
 }
 
-type PermissionWizardStep = "intro" | "restricted" | "accessibility" | "accessibility-permission-required" | "usage" | "overlay" | "done";
+function isUninstallProtectionReady(status: NativeProtectionStatus | null) {
+  return Boolean(status?.deviceAdminActive);
+}
+
+type PermissionWizardStep = "intro" | "restricted" | "accessibility" | "accessibility-permission-required" | "usage" | "overlay" | "device-admin" | "done";
 
 function PermissionWizard({
   status,
   open,
   onRefresh,
   onComplete,
+  onClose,
   accessibilityAttempted,
   onAccessibilityAttempt,
   restrictedSettingsAttempted,
@@ -184,6 +192,7 @@ function PermissionWizard({
   open: boolean;
   onRefresh: () => void;
   onComplete: () => void;
+  onClose: () => void;
   accessibilityAttempted: boolean;
   onAccessibilityAttempt: () => void;
   restrictedSettingsAttempted: boolean;
@@ -213,6 +222,9 @@ function PermissionWizard({
     }
     if (!status.overlayPermissionGranted) {
       return "overlay" as PermissionWizardStep;
+    }
+    if (!status.deviceAdminActive) {
+      return "device-admin" as PermissionWizardStep;
     }
     return "done" as PermissionWizardStep;
   })();
@@ -249,6 +261,12 @@ function PermissionWizard({
       title: "Allow Display Over Other Apps",
       description: "This shows the full-screen blocker whenever a protected app opens.",
       primary: "Open Overlay Settings",
+    },
+    "device-admin": {
+      title: "Enable Uninstall Protection",
+      description: "This prevents Last Puff from being removed until the unlock challenge is completed.",
+      primary: "Enable Protection",
+      secondary: "Open Device Admin",
     },
     done: {
       title: "Protection Active",
@@ -312,9 +330,18 @@ function PermissionWizard({
       void openNativeOverlaySettings();
       return;
     }
+    if (nextStep === "device-admin") {
+      // Device Admin is the Android-supported gate that blocks direct uninstall.
+      void enableNativeUninstallProtection().finally(() => onRefresh());
+      return;
+    }
   };
 
   const handleSecondary = () => {
+    if (nextStep === "device-admin") {
+      void openNativeDeviceAdminSettings();
+      return;
+    }
     onRefresh();
   };
 
@@ -323,6 +350,7 @@ function PermissionWizard({
     ["Restricted Settings", effectiveRestrictedSettingsAllowed],
     ["Accessibility", Boolean(status?.accessibilityEnabled && status?.accessibilityActive)],
     ["Display Over Other Apps", Boolean(status?.overlayPermissionGranted)],
+    ["Uninstall Protection", isUninstallProtectionReady(status)],
   ] as const;
 
   return (
@@ -334,8 +362,15 @@ function PermissionWizard({
     >
       <div className="mx-auto flex min-h-full w-full max-w-3xl items-start justify-center py-4 sm:items-center">
         <GlassCard className="max-h-[calc(100dvh-2rem)] w-full overflow-hidden border border-foreground/10">
-          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain p-5">
-            <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Permission Wizard</div>
+          <div className="relative max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain p-5">
+            <button
+              onClick={onClose}
+              aria-label="Close permission review"
+              className="absolute right-5 top-5 flex h-9 w-9 items-center justify-center rounded-full border border-foreground/10 bg-background text-muted-foreground shadow-sm transition hover:text-foreground"
+            >
+              <X className="h-4 w-4" />
+            </button>
+            <div className="pr-10 text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Permission Wizard</div>
             <div className="mt-2 text-2xl font-semibold text-foreground">{activeConfig.title}</div>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">{activeConfig.description}</p>
 
@@ -861,16 +896,6 @@ export default function ControlPage() {
       return;
     }
 
-    if (isProtectionReady(nativeProtectionStatus)) {
-      completePermissionWizard();
-    }
-  }, [nativeProtectionStatus]);
-
-  useEffect(() => {
-    if (!isNativeAndroid()) {
-      return;
-    }
-
     let burstTimer: number | null = null;
     let intervalTimer: number | null = null;
 
@@ -1081,6 +1106,7 @@ export default function ControlPage() {
         status={nativeProtectionStatus}
         onRefresh={() => void refreshNativeProtectionStatus()}
         onComplete={completePermissionWizard}
+        onClose={() => setPermissionWizardOpen(false)}
         accessibilityAttempted={accessibilityAttempted}
         onAccessibilityAttempt={markAccessibilityAttempted}
         restrictedSettingsAttempted={restrictedSettingsAttempted}
@@ -1123,7 +1149,7 @@ export default function ControlPage() {
               onClick={() => setPermissionWizardOpen(true)}
               className="rounded-2xl border border-foreground/10 bg-background px-4 py-3 text-xs font-semibold text-foreground shadow-sm"
             >
-              Review Permissions
+              Review
             </button>
           ) : null}
         </div>

@@ -127,13 +127,13 @@ export function DashboardPage() {
   const activityQueryKey = useMemo(() => queryKeys.activity(userId), [userId]);
   const dashboardQuery = useQuery({
     queryKey: dashboardQueryKey,
-    queryFn: () => apiRequest<DashboardResponse>("/api/stats/dashboard"),
+    // Dashboard must paint from cache immediately; background refreshes stay silent.
+    queryFn: () => apiRequest<DashboardResponse>("/api/stats/dashboard", { skipLoading: true }),
     enabled: hydrated && isAuthenticated && Boolean(userId),
     refetchInterval: 60000,
     ...queryCacheTimes.dashboard,
-    refetchOnMount: true,
-    refetchOnWindowFocus: true,
-    staleTime: 0,
+    refetchOnMount: cachedDashboardQuery?.data ? false : "always",
+    refetchOnWindowFocus: false,
     initialData: cachedDashboardQuery?.data,
     initialDataUpdatedAt: cachedDashboardQuery?.updatedAt,
   });
@@ -180,7 +180,18 @@ export function DashboardPage() {
   }, [dashboard]);
 
   useEffect(() => {
-    void ensureNativeNotificationPermission().catch(() => {});
+    const requestPermission = () => {
+      void ensureNativeNotificationPermission().catch(() => {});
+    };
+
+    // Permission prompts are non-critical and should not compete with first dashboard paint.
+    if (typeof window !== "undefined" && "requestIdleCallback" in window) {
+      const idleId = window.requestIdleCallback(requestPermission, { timeout: 2500 });
+      return () => window.cancelIdleCallback(idleId);
+    }
+
+    const timeout = window.setTimeout(requestPermission, 800);
+    return () => window.clearTimeout(timeout);
   }, []);
 
   useEffect(() => {

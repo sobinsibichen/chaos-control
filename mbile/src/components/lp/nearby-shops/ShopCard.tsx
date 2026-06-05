@@ -1,4 +1,5 @@
 import { motion } from "framer-motion";
+import { useState } from "react";
 import { FiHeart, FiMapPin, FiNavigation, FiPhone, FiStar } from "react-icons/fi";
 import { FaHeart } from "react-icons/fa";
 import { type NearbyStore, buildDirectionsUrl, formatDistance } from "@/services/googlePlaces";
@@ -18,6 +19,9 @@ export function ShopCard({
   onToggleFavorite,
   onSelect,
 }: ShopCardProps) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const showPhoto = Boolean(store.photoUrl) && !imageFailed;
+
   return (
     <motion.article
       layout
@@ -30,12 +34,14 @@ export function ShopCard({
       }`}
     >
       <div className="relative h-40 overflow-hidden bg-[radial-gradient(circle_at_top,#fde68a,transparent_55%),linear-gradient(135deg,#f8fafc,#e2e8f0)]">
-        {store.photoUrl ? (
+        {showPhoto ? (
           <img
-            src={store.photoUrl}
+            src={store.photoUrl ?? undefined}
             alt={store.name}
             className="h-full w-full object-cover"
             loading="lazy"
+            referrerPolicy="no-referrer-when-downgrade"
+            onError={() => setImageFailed(true)}
           />
         ) : (
           <div className="flex h-full items-center justify-center text-sm font-semibold text-slate-500">

@@ -32,6 +32,8 @@ export function MentalStabilityChallenge({ open, onClose, onResult }: MentalStab
   const [attempts, setAttempts] = useState(0);
   const [composerFocused, setComposerFocused] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const textViewportRef = useRef<HTMLDivElement>(null);
+  const activeCharacterRef = useRef<HTMLSpanElement>(null);
 
   const paragraph = useMemo(() => paragraphs[seed]!, [seed]);
   const completedCount = typed.length;
@@ -49,6 +51,7 @@ export function MentalStabilityChallenge({ open, onClose, onResult }: MentalStab
     setFailed(false);
     setCompleted(false);
     setAttempts(0);
+    textViewportRef.current?.scrollTo({ top: 0 });
     window.setTimeout(() => inputRef.current?.focus(), 50);
   }, [open, seed]);
 
@@ -57,6 +60,36 @@ export function MentalStabilityChallenge({ open, onClose, onResult }: MentalStab
       window.setTimeout(() => inputRef.current?.focus(), 50);
     }
   }, [open, failed]);
+
+  useEffect(() => {
+    if (!open || failed || completed) {
+      return;
+    }
+
+    const viewport = textViewportRef.current;
+    const activeCharacter = activeCharacterRef.current;
+    if (!viewport || !activeCharacter) {
+      return;
+    }
+
+    const viewportRect = viewport.getBoundingClientRect();
+    const characterRect = activeCharacter.getBoundingClientRect();
+    const lowerComfortLine = viewportRect.bottom - viewportRect.height * 0.28;
+    const upperComfortLine = viewportRect.top + viewportRect.height * 0.12;
+
+    if (characterRect.bottom > lowerComfortLine) {
+      // Keep upcoming text visible as the hidden textarea caret advances.
+      viewport.scrollTo({
+        top: viewport.scrollTop + characterRect.bottom - lowerComfortLine,
+        behavior: "smooth",
+      });
+    } else if (characterRect.top < upperComfortLine) {
+      viewport.scrollTo({
+        top: Math.max(0, viewport.scrollTop - (upperComfortLine - characterRect.top)),
+        behavior: "smooth",
+      });
+    }
+  }, [completed, failed, open, typed]);
 
   const failChallenge = () => {
     setFailed(true);
@@ -103,6 +136,7 @@ export function MentalStabilityChallenge({ open, onClose, onResult }: MentalStab
     setFailed(false);
     setCompleted(false);
     setAttempts(0);
+    textViewportRef.current?.scrollTo({ top: 0 });
     window.setTimeout(() => inputRef.current?.focus(), 50);
   };
 
@@ -158,7 +192,7 @@ export function MentalStabilityChallenge({ open, onClose, onResult }: MentalStab
             </div>
 
             <div className="relative flex-1 overflow-hidden rounded-[1.75rem] border border-foreground/10 bg-card p-4">
-              <div className="max-h-[42vh] overflow-y-auto pr-2 text-[15px] leading-7">
+              <div ref={textViewportRef} className="max-h-[42vh] overflow-y-auto pr-2 text-[15px] leading-7 scroll-smooth">
                 {charStates.map((entry, index) => {
                   const className =
                     entry.state === "correct"
@@ -171,6 +205,7 @@ export function MentalStabilityChallenge({ open, onClose, onResult }: MentalStab
 
                   return (
                     <span
+                      ref={isCursor ? activeCharacterRef : undefined}
                       key={`${entry.character}-${index}`}
                       className={`${className} relative rounded-sm transition-colors ${isCursor ? "bg-foreground/10" : ""}`}
                     >
