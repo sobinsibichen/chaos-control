@@ -21,8 +21,8 @@ export function CravingAiPanel({
   dangerousWindow: { label: string; intensity: number };
 }) {
   const engine = data.patternPrediction;
-  const hourlyCraving = data.hourlyCraving.length
-    ? data.hourlyCraving
+  const hourlyCraving = engine.hourlyRisk.length
+    ? engine.hourlyRisk
     : Array.from({ length: 24 }, (_, hour) => ({
         hour,
         label: `${String(hour).padStart(2, "0")}:00`,
@@ -30,9 +30,11 @@ export function CravingAiPanel({
       }));
   const riskValue = engine.scores.relapseRisk;
   const successValue = engine.scores.quitSuccess;
-  const dangerousLabel = dangerousWindow.label || "22:00";
-  const triggerPrimary = data.liveCraving?.triggerPrediction?.primary ?? "Routine loop";
-  const generatedAt = data.liveCraving?.createdAt ? new Date(data.liveCraving.createdAt).toLocaleString("en-IN") : "Live";
+  const dangerousLabel = engine.hasPredictionData ? dangerousWindow.label : "Not enough data yet";
+  const triggerCard = engine.patternCards.find((card) => card.title === "Most Common Trigger");
+  const triggerPrimary = engine.hasPredictionData && triggerCard?.value !== "Not enough data yet" ? triggerCard?.value : "Not enough data yet";
+  const generatedAt = data.cigaretteHistory.length ? "From smoking logs" : "Not enough data yet";
+  const recentSmokingLogs = data.cigaretteHistory.slice(-4).reverse();
 
   return (
     <div className="space-y-4">
@@ -43,7 +45,7 @@ export function CravingAiPanel({
             <div className="mt-2 text-2xl font-semibold text-foreground">Pattern forecast</div>
             <p className="mt-2 text-sm text-muted-foreground">
               {engine.hasPredictionData
-                ? `Forecasts use weighted moving averages, trend regression, trigger scoring, and current craving risk. Peak window: ${dangerousLabel}.`
+                ? `Forecasts use statistical ranges from real smoking logs only. Peak window: ${dangerousLabel}.`
                 : engine.insufficientMessage}
             </p>
             <div className="mt-2 text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Generated {generatedAt}</div>
@@ -119,7 +121,7 @@ export function CravingAiPanel({
         <div className="grid grid-cols-2 gap-3">
           <div className="rounded-2xl bg-background p-4">
             <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Dangerous hours</div>
-            <div className="mt-2 text-lg font-semibold text-foreground">{dangerousLabel} - 23:30</div>
+            <div className="mt-2 text-lg font-semibold text-foreground">{dangerousLabel}</div>
           </div>
           <div className="rounded-2xl bg-background p-4">
             <div className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Primary trigger</div>
@@ -131,14 +133,14 @@ export function CravingAiPanel({
       <GlassCard className="border border-foreground/10">
         <div className="mb-4 text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">Prediction history</div>
         <div className="space-y-3">
-          {data.cravingHistory.length ? data.cravingHistory.slice(0, 4).map((item) => (
+          {recentSmokingLogs.length ? recentSmokingLogs.map((item) => (
             <div key={item.id} className="rounded-2xl border border-foreground/10 bg-background px-4 py-4">
-              <div className="text-xs font-medium uppercase tracking-[0.15em] text-muted-foreground">{new Date(item.createdAt).toLocaleString("en-IN")}</div>
-              <div className="mt-2 text-sm font-semibold text-foreground">{item.insightText}</div>
+              <div className="text-xs font-medium uppercase tracking-[0.15em] text-muted-foreground">{new Date(item.loggedAt).toLocaleString("en-IN")}</div>
+              <div className="mt-2 text-sm font-semibold text-foreground">Logged {item.cigarettesCount} cigarette{item.cigarettesCount === 1 ? "" : "s"}</div>
             </div>
           )) : (
             <div className="rounded-2xl border border-dashed border-foreground/10 bg-background px-4 py-6 text-sm text-muted-foreground">
-              No saved craving predictions yet.
+              Not enough data yet
             </div>
           )}
         </div>

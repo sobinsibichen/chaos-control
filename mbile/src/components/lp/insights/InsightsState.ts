@@ -1,6 +1,7 @@
 import type { ActivityRow, DashboardPayload } from "@/lib/intelligence";
 import type { SmokeDnaRecord } from "@/lib/intelligenceApi";
 import type { CravingPredictionRecord } from "@/lib/cravingApi";
+import type { CigaretteLogRecord } from "@/lib/cigaretteHistoryApi";
 import type { SmokeReplayRecord } from "@/lib/replayApi";
 import type { PatternPredictionEngine } from "@/lib/pattern-prediction";
 
@@ -15,6 +16,7 @@ export interface InsightsSharedData {
   replayHistory: SmokeReplayRecord[];
   cravingHistory: CravingPredictionRecord[];
   liveCraving: CravingPredictionRecord | undefined;
+  cigaretteHistory: CigaretteLogRecord[];
   profileLabel: string;
   activity: ActivityRow[];
   hourlyCraving: Array<{ hour: number; label: string; intensity: number }>;

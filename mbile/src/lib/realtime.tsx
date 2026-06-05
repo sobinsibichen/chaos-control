@@ -179,6 +179,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
         void queryClient.invalidateQueries({ queryKey: queryKeys.profile });
         void queryClient.invalidateQueries({ queryKey: queryKeys.achievements });
         void queryClient.invalidateQueries({ queryKey: queryKeys.analytics });
+        void queryClient.invalidateQueries({ queryKey: ["cigarettes", "history"] });
         void queryClient.invalidateQueries({ queryKey: queryKeys.highlights });
         void queryClient.invalidateQueries({ queryKey: queryKeys.apps });
         void queryClient.invalidateQueries({ queryKey: queryKeys.nearby });

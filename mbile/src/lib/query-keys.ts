@@ -11,6 +11,7 @@ export const queryKeys = {
   achievements: (userId: UserScope) => ["achievements", ...userScope(userId)] as const,
   analytics: (userId: UserScope) => ["analytics", ...userScope(userId)] as const,
   highlights: (userId: UserScope) => ["highlights", ...userScope(userId)] as const,
+  cigaretteHistory: (userId: UserScope, dayToken?: string) => ["cigarettes", "history", dayToken ?? "today", ...userScope(userId)] as const,
   apps: (userId: UserScope) => ["apps", ...userScope(userId)] as const,
   nearby: (userId: UserScope) => ["nearby", ...userScope(userId)] as const,
   smokeDna: (userId: UserScope) => ["intelligence", "smoke-dna", ...userScope(userId)] as const,

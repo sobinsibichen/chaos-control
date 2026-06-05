@@ -85,32 +85,30 @@ export function InsightsHub({ initialTab = "Roast" }: { initialTab?: InsightsTab
 
   const radarData = useMemo(
     () => [
-      { metric: "Stress", value: data.smokeDna?.moodCorrelation.stressed ?? Math.min(100, (data.dashboard?.dailyStatus.regretLevel ?? 40) + 12) },
-      { metric: "Routine", value: data.smokeDna?.habitScore ?? Math.min(100, (data.dashboard?.stats.dailySmokingAverage ?? 4) * 8) },
+      { metric: "Stress", value: data.smokeDna?.moodCorrelation.stressed ?? 0 },
+      { metric: "Routine", value: data.smokeDna?.habitScore ?? 0 },
       {
         metric: "Night",
         value: (() => {
-          const nightValues = data.hourlyCraving.slice(18).map((item) => item.intensity);
+          const nightValues = data.patternPrediction.hourlyRisk.slice(18).map((item) => item.intensity);
           return nightValues.length ? Math.max(...nightValues) : 0;
         })(),
       },
-      { metric: "Social", value: data.smokeDna?.moodCorrelation.social ?? Math.min(100, 35 + (data.dashboard?.stats.blockedBuys ?? 0) * 4) },
-      { metric: "Heavy", value: data.smokeDna?.smokingIntensity ?? Math.min(100, (data.analytics?.peakSingleDay ?? 0) * 8) },
+      { metric: "Social", value: data.smokeDna?.moodCorrelation.social ?? 0 },
+      { metric: "Heavy", value: data.smokeDna?.smokingIntensity ?? 0 },
     ],
-    [data.analytics?.peakSingleDay, data.dashboard?.dailyStatus.regretLevel, data.dashboard?.stats.blockedBuys, data.dashboard?.stats.dailySmokingAverage, data.hourlyCraving, data.smokeDna],
+    [data.patternPrediction.hourlyRisk, data.smokeDna],
   );
 
   const dangerousWindow = useMemo(
-    () => data.hourlyCraving.reduce((peak, current) => (current.intensity > peak.intensity ? current : peak), data.hourlyCraving[0] ?? { label: "22:00", intensity: 0 }),
-    [data.hourlyCraving],
+    () => data.patternPrediction.hourlyRisk.reduce((peak, current) => (current.intensity > peak.intensity ? current : peak), data.patternPrediction.hourlyRisk[0] ?? { label: "Not enough data yet", intensity: 0 }),
+    [data.patternPrediction.hourlyRisk],
   );
 
   const insightCards = data.smokeDna?.insights?.length
     ? data.smokeDna.insights
     : [
-        `Stress is linked to ${Math.min(89, (data.dashboard?.dailyStatus.regretLevel ?? 40) + 19)}% of your smoking sessions.`,
-        data.liveCraving?.insightText ?? "Your cravings peak after meals and late at night.",
-        `${data.dashboard?.stats.blockedBuys ?? 0} blocked purchases suggest impulse protection is actively helping.`,
+        data.patternPrediction.insufficientMessage,
       ];
 
   return (

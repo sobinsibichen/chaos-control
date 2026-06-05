@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/api";
 import { useAppStore } from "@/lib/app-store";
+import { listCigaretteHistory } from "@/lib/cigaretteHistoryApi";
 import { createCravingPrediction, createFallbackCravingPrediction, fetchLiveCravingPrediction, listCravingPredictions, type CravingPredictionRecord } from "@/lib/cravingApi";
 import { createFallbackSmokeDna, createSmokeDna, listSmokeDna } from "@/lib/intelligenceApi";
 import { readLocalQueryCache, userLocalQueryCacheKey, writeLocalQueryCache } from "@/lib/local-query-cache";
@@ -52,6 +53,7 @@ const insightsCacheKeys = {
   yearlyReplay: (year: number) => `last-puff-insights-replay-yearly-${year}`,
   cravingHistory: "last-puff-insights-craving-history-cache",
   liveCraving: "last-puff-insights-live-craving-cache",
+  cigaretteHistory: "last-puff-insights-cigarette-history-cache",
 };
 
 export function useIntelligenceData() {
@@ -65,6 +67,7 @@ export function useIntelligenceData() {
   const now = new Date();
   const currentYear = now.getFullYear();
   const currentMonth = now.getMonth() + 1;
+  const currentDayToken = now.toISOString().slice(0, 10);
   const cachedDashboard = useMemo(
     () => (userId ? readLocalQueryCache<{ success: boolean } & DashboardPayload>(userLocalQueryCacheKey(insightsCacheKeys.dashboard, userId), INSIGHTS_CACHE_MAX_AGE_MS) : null),
     [userId],
@@ -101,6 +104,10 @@ export function useIntelligenceData() {
     () => (userId ? readLocalQueryCache<CravingPredictionRecord>(userLocalQueryCacheKey(insightsCacheKeys.liveCraving, userId), INSIGHTS_CACHE_MAX_AGE_MS) : null),
     [userId],
   );
+  const cachedCigaretteHistory = useMemo(
+    () => (userId ? readLocalQueryCache<Awaited<ReturnType<typeof listCigaretteHistory>>>(userLocalQueryCacheKey(`${insightsCacheKeys.cigaretteHistory}-${currentDayToken}`, userId), INSIGHTS_CACHE_MAX_AGE_MS) : null),
+    [currentDayToken, userId],
+  );
 
   useEffect(() => {
     console.info("[insights-cache] Insights page mounted; route unmounts on navigation away.", {
@@ -115,6 +122,7 @@ export function useIntelligenceData() {
         yearlyReplay: Boolean(cachedYearlyReplay?.data),
         cravingHistory: Boolean(cachedCravingHistory?.data),
         liveCraving: Boolean(cachedLiveCraving?.data),
+        cigaretteHistory: Boolean(cachedCigaretteHistory?.data),
       },
     });
 
@@ -127,6 +135,7 @@ export function useIntelligenceData() {
     cachedCravingHistory?.data,
     cachedDashboard?.data,
     cachedLiveCraving?.data,
+    cachedCigaretteHistory?.data,
     cachedMonthlyReplay?.data,
     cachedReplayHistory?.data,
     cachedSmokeDna?.data,
@@ -278,6 +287,23 @@ export function useIntelligenceData() {
     initialDataUpdatedAt: cachedLiveCraving?.updatedAt,
   });
 
+  const cigaretteHistoryQuery = useQuery({
+    queryKey: queryKeys.cigaretteHistory(userId, currentDayToken),
+    queryFn: async () => {
+      try {
+        console.info("[insights-cache] GET /api/cigarettes/history via Insights queryFn; skipLoading=true.");
+        return await listCigaretteHistory({ limit: 5000, skipLoading: true });
+      } catch {
+        return [];
+      }
+    },
+    enabled: queriesEnabled,
+    ...insightsQueryOptions,
+    staleTime: 5 * 60_000,
+    initialData: cachedCigaretteHistory?.data,
+    initialDataUpdatedAt: cachedCigaretteHistory?.updatedAt,
+  });
+
   useEffect(() => {
     if (!userId) return;
     if (dashboardQuery.data) writeLocalQueryCache(userLocalQueryCacheKey(insightsCacheKeys.dashboard, userId), dashboardQuery.data);
@@ -289,12 +315,15 @@ export function useIntelligenceData() {
     if (yearlyReplayQuery.data) writeLocalQueryCache(userLocalQueryCacheKey(insightsCacheKeys.yearlyReplay(currentYear), userId), yearlyReplayQuery.data);
     if (cravingHistoryQuery.data) writeLocalQueryCache(userLocalQueryCacheKey(insightsCacheKeys.cravingHistory, userId), cravingHistoryQuery.data);
     if (liveCravingQuery.data) writeLocalQueryCache(userLocalQueryCacheKey(insightsCacheKeys.liveCraving, userId), liveCravingQuery.data);
+    if (cigaretteHistoryQuery.data) writeLocalQueryCache(userLocalQueryCacheKey(`${insightsCacheKeys.cigaretteHistory}-${currentDayToken}`, userId), cigaretteHistoryQuery.data);
   }, [
     activityQuery.data,
     analyticsQuery.data,
     cravingHistoryQuery.data,
+    cigaretteHistoryQuery.data,
     currentMonth,
     currentYear,
+    currentDayToken,
     dashboardQuery.data,
     liveCravingQuery.data,
     monthlyReplayQuery.data,
@@ -372,6 +401,7 @@ export function useIntelligenceData() {
   const replayHistory = replayHistoryQuery.data ?? [];
   const cravingHistory = cravingHistoryQuery.data ?? [];
   const liveCraving = liveCravingQuery.data;
+  const cigaretteHistory = cigaretteHistoryQuery.data ?? [];
 
   const profileLabel = smokeDna?.smokerType ?? resolveSmokingProfile(dashboard, analytics);
   const hourlyCraving = useMemo(
@@ -404,8 +434,9 @@ export function useIntelligenceData() {
       liveCraving,
       activity,
       hourlyCraving,
+      cigaretteHistory,
     }),
-    [activity, analytics, cravingHistory, dashboard, hourlyCraving, liveCraving, monthlyReplay, replayHistory, smokeDna, yearlyReplay],
+    [activity, analytics, cravingHistory, dashboard, hourlyCraving, liveCraving, monthlyReplay, replayHistory, smokeDna, yearlyReplay, cigaretteHistory],
   );
 
   return {
@@ -418,6 +449,7 @@ export function useIntelligenceData() {
     replayHistory,
     cravingHistory,
     liveCraving,
+    cigaretteHistory,
     profileLabel,
     hourlyCraving,
     weeklyReplay,
@@ -431,6 +463,7 @@ export function useIntelligenceData() {
       monthlyReplayQuery.isLoading ||
       yearlyReplayQuery.isLoading ||
       liveCravingQuery.isLoading ||
+      cigaretteHistoryQuery.isLoading ||
       false,
     error:
       (dashboardQuery.error instanceof Error && dashboardQuery.error.message) ||

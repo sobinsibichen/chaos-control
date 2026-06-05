@@ -1,3 +1,4 @@
+import type { CigaretteLogRecord } from "@/lib/cigaretteHistoryApi";
 import type { CravingPredictionRecord } from "@/lib/cravingApi";
 import type { DashboardPayload, RoastAnalyticsPayload, ActivityRow } from "@/lib/intelligence";
 import type { SmokeDnaRecord } from "@/lib/intelligenceApi";
@@ -7,7 +8,7 @@ export interface PatternCard {
   title: string;
   value: string;
   detail: string;
-  confidence: "Live" | "Limited" | "Strong";
+  confidence: "Low" | "Medium" | "High";
 }
 
 export interface ForecastCard {
@@ -47,14 +48,31 @@ interface EngineInput {
   liveCraving?: CravingPredictionRecord;
   activity: ActivityRow[];
   hourlyCraving: Array<{ hour: number; label: string; intensity: number }>;
+  cigaretteHistory: CigaretteLogRecord[];
 }
 
-const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const NOT_ENOUGH = "Not enough data yet";
+const LIMITED = "Limited prediction accuracy";
+const MS_PER_DAY = 86_400_000;
 const shortDays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+function startOfDay(date: Date) {
+  const copy = new Date(date);
+  copy.setHours(0, 0, 0, 0);
+  return copy;
+}
+
+function dateKey(date: Date) {
+  return startOfDay(date).toISOString().slice(0, 10);
+}
 
 function clamp(value: number, min = 0, max = 100) {
-  if (!Number.isFinite(value)) return min;
-  return Math.max(min, Math.min(max, value));
+  return Number.isFinite(value) ? Math.max(min, Math.min(max, value)) : min;
+}
+
+function average(values: number[]) {
+  return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
 }
 
 function formatHour(hour: number) {
@@ -63,298 +81,377 @@ function formatHour(hour: number) {
   return new Intl.DateTimeFormat(undefined, { hour: "numeric" }).format(date);
 }
 
-function weightedMovingAverage(values: number[]) {
-  if (!values.length) return 0;
-  const weights = values.map((_, index) => index + 1);
-  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
-  return values.reduce((sum, value, index) => sum + value * weights[index], 0) / totalWeight;
+function formatClock(date: Date) {
+  return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(date);
 }
 
-function linearRegressionSlope(values: number[]) {
-  if (values.length < 2) return 0;
-  const n = values.length;
-  const meanX = (n - 1) / 2;
-  const meanY = values.reduce((sum, value) => sum + value, 0) / n;
-  const numerator = values.reduce((sum, y, x) => sum + (x - meanX) * (y - meanY), 0);
-  const denominator = values.reduce((sum, _, x) => sum + (x - meanX) ** 2, 0);
-  return denominator ? numerator / denominator : 0;
+function addMinutes(date: Date, minutes: number) {
+  return new Date(date.getTime() + minutes * 60_000);
 }
 
-function parseActivityCount(activity: ActivityRow) {
-  const text = `${activity.title} ${activity.description}`.toLowerCase();
-  if (!/(smok|cigarette|craving|puff|quit|avoided)/.test(text)) return 0;
-  const numberMatch = text.match(/\b(\d{1,3})\b/);
-  if (numberMatch && /(smok|cigarette|puff)/.test(text)) return Number(numberMatch[1]);
-  if (/(smok|cigarette|puff)/.test(text)) return 1;
-  return 0;
+function confidenceFor(historyDays: number): PatternCard["confidence"] {
+  if (historyDays > 30) return "High";
+  if (historyDays >= 7) return "Medium";
+  return "Low";
 }
 
-function calendarDailyCounts(input: EngineInput) {
-  const fromMonthly = input.monthlyReplay?.analytics.calendarHeatmap
-    ?.map((entry, index) => ({
-      date: new Date(entry.day || Date.now() - (input.monthlyReplay!.analytics.calendarHeatmap.length - index) * 86_400_000),
-      count: Math.max(0, Number(entry.total) || 0),
+function normalizeLogs(logs: CigaretteLogRecord[]) {
+  return logs
+    .map((log) => ({
+      ...log,
+      cigarettesCount: Math.max(0, Number(log.cigarettesCount) || 0),
+      pricePerUnit: Math.max(0, Number(log.pricePerUnit) || 0),
+      date: new Date(log.loggedAt),
     }))
-    .filter((entry) => Number.isFinite(entry.date.getTime()) && entry.count > 0) ?? [];
+    .filter((log) => log.cigarettesCount > 0 && Number.isFinite(log.date.getTime()))
+    .sort((left, right) => left.date.getTime() - right.date.getTime());
+}
 
-  if (fromMonthly.length) return fromMonthly;
+function dailySeries(logs: ReturnType<typeof normalizeLogs>, today: Date) {
+  if (!logs.length) return [];
+  const first = startOfDay(logs[0].date);
+  const last = startOfDay(today);
+  const totals = new Map<string, number>();
+  logs.forEach((log) => {
+    const key = dateKey(log.date);
+    totals.set(key, (totals.get(key) ?? 0) + log.cigarettesCount);
+  });
 
-  const activityByDay = new Map<string, { date: Date; count: number }>();
-  input.activity.forEach((item) => {
-    const date = new Date(item.created_at);
-    const count = parseActivityCount(item);
-    if (!Number.isFinite(date.getTime()) || count <= 0) {
+  const days = Math.floor((last.getTime() - first.getTime()) / MS_PER_DAY);
+  return Array.from({ length: days + 1 }, (_, index) => {
+    const date = new Date(first.getTime() + index * MS_PER_DAY);
+    return { date, count: totals.get(dateKey(date)) ?? 0 };
+  });
+}
+
+function averageIntervalMinutes(logs: ReturnType<typeof normalizeLogs>) {
+  if (logs.length < 2) return null;
+  const intervals = logs.slice(1).map((log, index) => (log.date.getTime() - logs[index].date.getTime()) / 60_000).filter((minutes) => minutes > 0);
+  // Formula: average of time differences between consecutive real cigarette log timestamps.
+  return intervals.length ? average(intervals) : null;
+}
+
+function streakStats(series: Array<{ date: Date; count: number }>) {
+  if (!series.length) return { current: 0, best: 0, average: 0, average30: 0 };
+  const streaks: number[] = [];
+  let running = 0;
+  series.forEach((day) => {
+    if (day.count === 0) {
+      running += 1;
       return;
     }
-
-    const key = date.toISOString().slice(0, 10);
-    const existing = activityByDay.get(key);
-    activityByDay.set(key, {
-      date,
-      count: (existing?.count ?? 0) + count,
-    });
+    if (running > 0) streaks.push(running);
+    running = 0;
   });
-  const fromActivity = [...activityByDay.values()];
+  if (running > 0) streaks.push(running);
 
-  if (fromActivity.length) return fromActivity;
-
-  const today = input.dashboard?.stats.todayCount ?? 0;
-  const average = Math.max(0, input.dashboard?.stats.dailySmokingAverage ?? input.analytics?.dailyAverage ?? 0);
-  const monthly = input.analytics?.monthlyCigarettes ?? [];
-  const monthlyPeak = Math.max(...monthly, 0);
-  if (today > 0 || average > 0 || monthlyPeak > 0) {
-    const base = today > 0 ? today : average;
-    const start = new Date();
-    return Array.from({ length: 7 }, (_, index) => {
-      const date = new Date(start);
-      date.setDate(start.getDate() - (6 - index));
-      const monthSignal = monthly.length ? monthly[date.getMonth()] / Math.max(monthlyPeak, 1) : 0.5;
-      const recency = index === 6 && today > 0 ? today : base * (0.82 + monthSignal * 0.36);
-      return {
-        date,
-        count: Math.max(0, Number(recency.toFixed(2))),
-      };
-    });
-  }
-
-  return [];
-}
-
-function getTriggerStats(input: EngineInput) {
-  const scores = new Map<string, number>();
-  input.smokeDna?.triggerPatterns.forEach((item) => {
-    scores.set(item.trigger, (scores.get(item.trigger) ?? 0) + item.score);
-  });
-  input.cravingHistory.forEach((item) => {
-    const trigger = item.triggerPrediction?.primary;
-    if (trigger) scores.set(trigger, (scores.get(trigger) ?? 0) + item.cravingProbability);
-  });
-  const sorted = [...scores.entries()].sort((a, b) => b[1] - a[1]);
-  const total = sorted.reduce((sum, [, score]) => sum + score, 0);
-  const top = sorted[0] ?? ["No trigger logged", 0];
+  const current = series[series.length - 1]?.count === 0 ? running : 0;
+  const recent30 = series.slice(-30);
+  const recentStats = streakStatsWithoutRecursion(recent30);
   return {
-    top: top[0],
-    topShare: total > 0 ? Math.round((top[1] / total) * 100) : 0,
-    total,
+    current,
+    best: Math.max(0, ...streaks),
+    average: Math.round(average(streaks)),
+    average30: Math.round(recentStats.average),
   };
 }
 
-function classifyProfile(input: EngineInput, peakHour: number, improvementPercent: number, triggerTop: string) {
-  const avg = input.dashboard?.stats.dailySmokingAverage ?? input.analytics?.dailyAverage ?? 0;
-  const stress = input.smokeDna?.moodCorrelation.stressed ?? input.dashboard?.dailyStatus.regretLevel ?? 0;
-  const social = input.smokeDna?.moodCorrelation.social ?? 0;
-  if (improvementPercent >= 12) return "Improving Quitter";
-  if (peakHour >= 20 || peakHour <= 2) return "Night Smoker";
-  if (/stress|anxiety|pressure|work/i.test(triggerTop) || stress >= 55) return "Stress Smoker";
-  if (/social|friend|party|drink/i.test(triggerTop) || social >= 45) return "Social Smoker";
-  if (avg > 0) return "Habit Smoker";
-  return "Building Baseline";
+function streakStatsWithoutRecursion(series: Array<{ count: number }>) {
+  const streaks: number[] = [];
+  let running = 0;
+  series.forEach((day) => {
+    if (day.count === 0) {
+      running += 1;
+    } else {
+      if (running > 0) streaks.push(running);
+      running = 0;
+    }
+  });
+  if (running > 0) streaks.push(running);
+  return { average: average(streaks) };
 }
 
-function buildHealthMilestone(smokeFreeSeconds: number) {
-  const hours = smokeFreeSeconds / 3600;
-  if (hours >= 24 * 14) return "Two-week recovery window: circulation and breathing comfort should keep improving.";
-  if (hours >= 72) return "72-hour milestone reached: bronchial recovery is underway.";
-  if (hours >= 24) return "24-hour milestone reached: carbon monoxide levels have had time to fall.";
-  if (hours >= 12) return "12-hour milestone reached: oxygen balance is moving in the right direction.";
-  return "Next health milestone: reach 12 smoke-free hours.";
+function periodAverage(series: Array<{ count: number }>, size: number, offset = 0) {
+  const end = series.length - offset;
+  const start = Math.max(0, end - size);
+  return average(series.slice(start, end).map((day) => day.count));
+}
+
+function trendLabel(current: number, previous: number) {
+  if (previous === 0 && current === 0) return "Stable";
+  const change = previous > 0 ? ((current - previous) / previous) * 100 : 100;
+  if (change <= -10) return "Improving";
+  if (change >= 10) return "Increasing";
+  return "Stable";
+}
+
+function hourlyRiskFromLogs(logs: ReturnType<typeof normalizeLogs>) {
+  const totals = Array.from({ length: 24 }, () => 0);
+  logs.forEach((log) => {
+    totals[log.date.getHours()] += log.cigarettesCount;
+  });
+  const peak = Math.max(1, ...totals);
+  return totals.map((total, hour) => ({
+    hour,
+    label: `${String(hour).padStart(2, "0")}:00`,
+    // Formula: hour intensity is that hour's historical count divided by the user's peak hourly count.
+    intensity: Math.round((total / peak) * 100),
+  }));
+}
+
+function mostAndLeastHourly(logs: ReturnType<typeof normalizeLogs>) {
+  const totals = Array.from({ length: 24 }, () => 0);
+  logs.forEach((log) => {
+    totals[log.date.getHours()] += log.cigarettesCount;
+  });
+  const active = totals.map((count, hour) => ({ hour, count })).filter((item) => item.count > 0);
+  return {
+    most: active.sort((a, b) => b.count - a.count)[0] ?? null,
+    least: active.sort((a, b) => a.count - b.count)[0] ?? null,
+  };
+}
+
+function dayAverages(series: Array<{ date: Date; count: number }>) {
+  const byDay = new Map<number, number[]>();
+  series.forEach((entry) => {
+    const day = entry.date.getDay();
+    byDay.set(day, [...(byDay.get(day) ?? []), entry.count]);
+  });
+  const rows = [...byDay.entries()].map(([day, values]) => ({ day, average: average(values) }));
+  return {
+    most: rows.sort((a, b) => b.average - a.average)[0] ?? null,
+    least: rows.sort((a, b) => a.average - b.average)[0] ?? null,
+  };
+}
+
+function sameWeekdayRange(series: Array<{ date: Date; count: number }>, today: Date) {
+  const todayKey = dateKey(today);
+  const weekday = today.getDay();
+  const matches = series.filter((entry) => entry.date.getDay() === weekday && dateKey(entry.date) !== todayKey).map((entry) => entry.count);
+  if (matches.length < 3) return null;
+  return { min: Math.min(...matches), max: Math.max(...matches), avg: average(matches), samples: matches.length };
+}
+
+function riskLevel(score: number) {
+  if (score >= 80) return "Critical";
+  if (score >= 60) return "High";
+  if (score >= 35) return "Medium";
+  return "Low";
+}
+
+function buildRiskScore(input: {
+  logs: ReturnType<typeof normalizeLogs>;
+  series: Array<{ date: Date; count: number }>;
+  hourlyRisk: Array<{ hour: number; intensity: number }>;
+  averageInterval: number | null;
+  now: Date;
+  currentStreak: number;
+}) {
+  if (input.logs.length < 3) return 0;
+  const currentHourRisk = input.hourlyRisk[input.now.getHours()]?.intensity ?? 0;
+  const sameWeekday = input.series.filter((entry) => entry.date.getDay() === input.now.getDay()).map((entry) => entry.count);
+  const weekdayWeight = clamp((average(sameWeekday) / Math.max(1, Math.max(...input.series.map((entry) => entry.count)))) * 100);
+  const lastLog = input.logs[input.logs.length - 1];
+  const minutesSinceLast = (input.now.getTime() - lastLog.date.getTime()) / 60_000;
+  const intervalWeight = input.averageInterval ? clamp(100 - Math.abs(minutesSinceLast - input.averageInterval) / input.averageInterval * 100) : 0;
+  const streakProtection = clamp(input.currentStreak * 8, 0, 35);
+  // Formula: risk is a weighted blend of current-hour history, weekday history, closeness to average interval, minus streak protection.
+  return clamp(currentHourRisk * 0.4 + weekdayWeight * 0.25 + intervalWeight * 0.25 + 10 - streakProtection);
+}
+
+function moodTrigger(logs: ReturnType<typeof normalizeLogs>) {
+  const counts = new Map<string, number>();
+  logs.forEach((log) => {
+    const mood = log.mood.trim();
+    if (!mood || mood.toLowerCase() === "tracked") return;
+    counts.set(mood, (counts.get(mood) ?? 0) + log.cigarettesCount);
+  });
+  return [...counts.entries()].sort((a, b) => b[1] - a[1])[0] ?? null;
 }
 
 export function buildPatternPredictionEngine(input: EngineInput): PatternPredictionEngine {
-  const dailyCounts = calendarDailyCounts(input).sort((a, b) => a.date.getTime() - b.date.getTime());
-  const values = dailyCounts.map((entry) => entry.count);
-  const dataDays = dailyCounts.length;
-  const liveSignals =
-    dataDays > 0 ||
-    Boolean(input.dashboard) ||
-    Boolean(input.analytics) ||
-    input.cravingHistory.length > 0 ||
-    Boolean(input.liveCraving) ||
-    Boolean(input.smokeDna);
-  const hasPredictionData = dataDays >= 3 || Boolean(input.dashboard) || Boolean(input.analytics);
-  const recent7 = values.slice(-7);
-  const previous7 = values.slice(-14, -7);
-  const recentAverage = recent7.length ? recent7.reduce((sum, value) => sum + value, 0) / recent7.length : (input.analytics?.dailyAverage ?? input.dashboard?.stats.dailySmokingAverage ?? 0);
-  const previousAverage = previous7.length ? previous7.reduce((sum, value) => sum + value, 0) / previous7.length : recentAverage;
-  const improvementPercent = previousAverage > 0 ? Math.round(((previousAverage - recentAverage) / previousAverage) * 100) : 0;
-  const slope = linearRegressionSlope(values.slice(-30));
-  const fallbackTomorrow = Math.max(input.dashboard?.stats.todayCount ?? 0, input.analytics?.dailyAverage ?? 0, input.dashboard?.stats.dailySmokingAverage ?? 0);
-  const tomorrow = Math.max(0, (recent7.length || values.length ? weightedMovingAverage(recent7.length ? recent7 : values) : fallbackTomorrow) + slope);
-  const forecast7 = Array.from({ length: 7 }, (_, index) => Math.max(0, tomorrow + slope * index));
-  const forecast30 = Array.from({ length: 30 }, (_, index) => Math.max(0, tomorrow + slope * index));
-  const price = input.dashboard?.stats.cigarettePrice ?? input.analytics?.cigarettePrice ?? 0;
-  const baseline = Math.max(input.analytics?.dailyAverage ?? 0, input.dashboard?.stats.dailySmokingAverage ?? 0, recentAverage);
-  const projectedSavings = Math.max(0, Math.round((baseline * 30 - forecast30.reduce((sum, value) => sum + value, 0)) * price));
-  const hourlyRisk = input.hourlyCraving.length ? input.hourlyCraving : Array.from({ length: 24 }, (_, hour) => ({ hour, label: `${hour}:00`, intensity: 0 }));
-  const peak = hourlyRisk.reduce((best, item) => (item.intensity > best.intensity ? item : best), hourlyRisk[0] ?? { hour: 0, label: "00:00", intensity: 0 });
-  const triggerStats = getTriggerStats(input);
-  const smokeFreeSeconds = input.dashboard?.smokeFree.seconds ?? 0;
-  const longestSeconds = Math.max(smokeFreeSeconds, input.dashboard?.stats.longestSmokeFreeSeconds ?? 0);
-  const weekendAverage = dailyCounts.filter((entry) => [0, 6].includes(entry.date.getDay())).reduce((sum, entry) => sum + entry.count, 0) /
-    Math.max(1, dailyCounts.filter((entry) => [0, 6].includes(entry.date.getDay())).length);
-  const weekdayAverage = dailyCounts.filter((entry) => ![0, 6].includes(entry.date.getDay())).reduce((sum, entry) => sum + entry.count, 0) /
-    Math.max(1, dailyCounts.filter((entry) => ![0, 6].includes(entry.date.getDay())).length);
-  const strongestDay = dailyCounts.reduce<Record<number, { total: number; days: number }>>((map, entry) => {
-    const day = entry.date.getDay();
-    map[day] = map[day] ?? { total: 0, days: 0 };
-    map[day].total += entry.count;
-    map[day].days += 1;
-    return map;
-  }, {});
-  const bestDay = Object.entries(strongestDay).sort((a, b) => (a[1].total / a[1].days) - (b[1].total / b[1].days))[0]?.[0];
-  const triggerLoad = clamp(triggerStats.topShare || input.liveCraving?.intensityScore || 0);
-  const relapseRisk = clamp(
-    (input.liveCraving?.cravingProbability ?? peak.intensity) * 0.36 +
-      Math.max(0, slope * 8) * 0.18 +
-      Math.max(0, (input.dashboard?.stats.todayCount ?? 0) - baseline) * 5 +
-      Math.max(0, 45 - (input.dashboard?.streak.current ?? 0) * 3) +
-      triggerLoad * 0.18,
-  );
-  const quitSuccess = clamp(100 - relapseRisk + Math.max(0, improvementPercent) * 0.45 + Math.min(20, (input.dashboard?.streak.current ?? 0) * 2));
-  const profile = classifyProfile(input, peak.hour, improvementPercent, triggerStats.top);
-  const averageSmokeFreeHours = baseline > 0 ? 24 / baseline : smokeFreeSeconds / 3600;
-  const timelineDays = slope < -0.05 && tomorrow > 1 ? Math.ceil((tomorrow - 1) / Math.abs(slope)) : null;
+  const logs = normalizeLogs(input.cigaretteHistory);
+  const now = new Date();
+  const series = dailySeries(logs, now);
+  const values = series.map((entry) => entry.count);
+  const historyDays = series.length;
+  const confidence = confidenceFor(historyDays);
+  const hasMinimumLogs = logs.length >= 3;
+  const hasPredictionData = hasMinimumLogs && historyDays >= 1;
+  const totalCigarettes = logs.reduce((sum, log) => sum + log.cigarettesCount, 0);
+  const price = average(logs.map((log) => log.pricePerUnit).filter((value) => value > 0)) || input.dashboard?.stats.cigarettePrice || input.analytics?.cigarettePrice || 0;
+  const avgInterval = averageIntervalMinutes(logs);
+  const streak = streakStats(series);
+  const hourlyRisk = hourlyRiskFromLogs(logs);
+  const hourly = mostAndLeastHourly(logs);
+  const days = dayAverages(series);
+  const recent7 = periodAverage(series, 7);
+  const previous7 = periodAverage(series, 7, 7);
+  const recent14 = periodAverage(series, 14);
+  const recent30 = periodAverage(series, 30);
+  const trend = trendLabel(recent7, previous7);
+  const improvementPercent = previous7 > 0 ? Math.round(((previous7 - recent7) / previous7) * 100) : 0;
+  const sameWeekday = sameWeekdayRange(series, now);
+  const riskScore = buildRiskScore({ logs, series, hourlyRisk, averageInterval: avgInterval, now, currentStreak: streak.current });
+  const monthRows = series.filter((entry) => entry.date.getFullYear() === now.getFullYear() && entry.date.getMonth() === now.getMonth());
+  const elapsedMonthDays = Math.max(1, now.getDate());
+  const currentMonthAverage = monthRows.reduce((sum, entry) => sum + entry.count, 0) / elapsedMonthDays;
+  const remainingDays = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate() - now.getDate();
+  // Formula: monthly forecast is current-month daily average multiplied by remaining calendar days, with one standard-error style range.
+  const monthlyRemaining = currentMonthAverage * remainingDays;
+  const monthlySpread = Math.max(1, Math.round(monthlyRemaining * 0.15));
+  const cravingWindow = avgInterval && logs.length ? {
+    start: addMinutes(logs[logs.length - 1].date, Math.max(0, avgInterval - 15)),
+    end: addMinutes(logs[logs.length - 1].date, avgInterval + 15),
+  } : null;
+  const trigger = moodTrigger(logs);
 
   const patternCards: PatternCard[] = [
     {
       title: "Peak Risk Time",
-      value: peak.intensity > 0 ? `${formatHour(peak.hour)} - ${formatHour((peak.hour + 2) % 24)}` : "Needs logs",
-      detail: peak.intensity > 0 ? `${Math.round(peak.intensity)}% risk from logged craving and usage signals.` : "Log cravings or cigarettes to detect the real peak risk time.",
-      confidence: input.liveCraving || input.cravingHistory.length ? "Live" : "Limited",
+      value: hasMinimumLogs && hourly.most ? `${formatHour(hourly.most.hour)} - ${formatHour((hourly.most.hour + 1) % 24)}` : NOT_ENOUGH,
+      detail: hasMinimumLogs && hourly.most
+        ? `Most active hour: ${hourly.most.count} cigarettes. Least active logged hour: ${hourly.least ? formatHour(hourly.least.hour) : NOT_ENOUGH}.`
+        : "At least 3 smoking logs are required.",
+      confidence,
     },
     {
       title: "Weekend Smoking Increase",
-      value: dataDays >= 14 ? `${Math.max(0, Math.round(((weekendAverage - weekdayAverage) / Math.max(weekdayAverage, 1)) * 100))}%` : "Needs 14 days",
-      detail: dataDays >= 14
-        ? (weekendAverage > weekdayAverage ? "Weekend logs are higher than weekday logs." : "Weekends are not currently higher than weekdays.")
-        : "Two weeks of dated logs are needed for a reliable weekend comparison.",
-      confidence: dataDays >= 14 ? "Strong" : "Limited",
+      value: hasMinimumLogs && days.most ? `${dayNames[days.most.day]}` : NOT_ENOUGH,
+      detail: hasMinimumLogs && days.most
+        ? `Most active day is ${dayNames[days.most.day]} (${days.most.average.toFixed(1)}/day); least active is ${days.least ? dayNames[days.least.day] : NOT_ENOUGH}.`
+        : "At least 3 smoking logs are required.",
+      confidence,
     },
     {
       title: "Longest Smoke-Free Window",
-      value: longestSeconds > 0 ? `${Math.floor(longestSeconds / 3600)}h` : "Needs logs",
-      detail: longestSeconds > 0 ? `Average smoke-free gap is about ${averageSmokeFreeHours.toFixed(1)}h from your baseline.` : "Start logging to calculate your longest smoke-free window.",
-      confidence: longestSeconds > 0 ? "Live" : "Limited",
+      value: hasMinimumLogs ? `${streak.best} days` : NOT_ENOUGH,
+      detail: hasMinimumLogs
+        ? `Current streak: ${streak.current} days. Average streak: ${streak.average} days. Last 30-day average: ${streak.average30} days.`
+        : "At least 3 smoking logs are required.",
+      confidence,
     },
     {
       title: "Most Common Trigger",
-      value: triggerStats.top,
-      detail: triggerStats.topShare ? `${triggerStats.topShare}% of trigger weight points here.` : "Trigger history is still building.",
-      confidence: triggerStats.total > 0 ? "Live" : "Limited",
+      value: hasMinimumLogs && trigger ? trigger[0] : NOT_ENOUGH,
+      detail: hasMinimumLogs && trigger
+        ? `${trigger[1]} cigarettes were logged with this mood/trigger.`
+        : "Mood or trigger labels in smoking logs are required.",
+      confidence,
     },
     {
       title: "Improvement Trend",
-      value: dataDays >= 14 ? `${improvementPercent >= 0 ? "-" : "+"}${Math.abs(improvementPercent)}%` : "Needs 14 days",
-      detail: dataDays >= 14 ? "Compares the last 7 logged days against the previous 7." : "Fourteen dated smoking logs are needed for an accurate trend.",
-      confidence: dataDays >= 14 ? "Strong" : "Limited",
+      value: historyDays >= 14 ? trend : NOT_ENOUGH,
+      detail: historyDays >= 14
+        ? `7-day avg ${recent7.toFixed(1)}, 14-day avg ${recent14.toFixed(1)}, 30-day avg ${recent30.toFixed(1)}.`
+        : "Fourteen days of smoking history are needed for trend comparison.",
+      confidence,
     },
   ];
 
   const forecastCards: ForecastCard[] = [
     {
       title: "Tomorrow",
-      value: hasPredictionData ? `${tomorrow.toFixed(1)} cigarettes` : "Needs data",
-      detail: dataDays >= 7 ? "Weighted moving average plus trend slope." : "Estimated from your current dashboard, analytics, and craving signals.",
-      available: hasPredictionData,
+      value: hasMinimumLogs && sameWeekday ? `${Math.round(sameWeekday.min)}-${Math.round(sameWeekday.max)} cigarettes` : NOT_ENOUGH,
+      detail: hasMinimumLogs && sameWeekday
+        ? `${dayNames[now.getDay()]} forecast range from ${sameWeekday.samples} previous ${dayNames[now.getDay()]} records. Confidence: ${confidence}.`
+        : "Need at least 3 prior records for this weekday.",
+      available: Boolean(hasMinimumLogs && sameWeekday),
     },
     {
       title: "7-Day Forecast",
-      value: hasPredictionData ? `${Math.round(forecast7.reduce((sum, value) => sum + value, 0))} cigarettes` : "Needs data",
-      detail: dataDays >= 7 ? "Linear trend projected across the next week." : "Short-range estimate from your logged-in user data.",
-      available: hasPredictionData,
+      value: hasMinimumLogs && cravingWindow ? `${formatClock(cravingWindow.start)} - ${formatClock(cravingWindow.end)}` : NOT_ENOUGH,
+      detail: hasMinimumLogs && cravingWindow && avgInterval
+        ? `Likely craving window from average interval (${Math.round(avgInterval)} minutes). Confidence: ${confidence}.`
+        : "At least 2 timestamped smoking logs are required.",
+      available: Boolean(hasMinimumLogs && cravingWindow),
     },
     {
       title: "30-Day Forecast",
-      value: hasPredictionData ? `${Math.round(forecast30.reduce((sum, value) => sum + value, 0))} cigarettes` : "Needs data",
-      detail: dataDays >= 7 ? "Regression-based month projection from recent history." : "Uses your current average, today count, and monthly signals until more daily history exists.",
-      available: hasPredictionData,
+      value: hasMinimumLogs ? `${Math.round(monthlyRemaining)} +/- ${monthlySpread}` : NOT_ENOUGH,
+      detail: hasMinimumLogs
+        ? `Current month average ${currentMonthAverage.toFixed(1)}/day x ${remainingDays} remaining days. Confidence: ${confidence}.`
+        : "At least 3 smoking logs are required.",
+      available: hasMinimumLogs,
     },
     {
       title: "Relapse Risk",
-      value: hasPredictionData ? `${Math.round(relapseRisk)}%` : "Needs data",
-      detail: "Uses craving risk, trigger load, streak, today count, and trend direction.",
-      available: hasPredictionData,
+      value: hasMinimumLogs ? `${riskLevel(riskScore)} Risk` : NOT_ENOUGH,
+      detail: hasMinimumLogs
+        ? `Derived from current hour, weekday behavior, time since last cigarette, and current streak. Confidence: ${confidence}.`
+        : "At least 3 smoking logs are required.",
+      available: hasMinimumLogs,
     },
     {
       title: "Quit Success",
-      value: hasPredictionData ? `${Math.round(quitSuccess)}%` : "Needs data",
-      detail: "Higher when trend drops, streak grows, and trigger load falls.",
-      available: hasPredictionData,
+      value: historyDays >= 14 ? trend : NOT_ENOUGH,
+      detail: historyDays >= 14
+        ? `Mathematical trend only: current 7-day period is ${trend.toLowerCase()} versus the previous 7 days.`
+        : "Fourteen days of smoking history are needed for trend confidence.",
+      available: historyDays >= 14,
     },
     {
       title: "30-Day Savings",
-      value: hasPredictionData ? `${input.analytics?.currencySymbol ?? "Rs"}${projectedSavings}` : "Needs data",
-      detail: "Projected against your current smoking baseline and cigarette price.",
-      available: hasPredictionData,
+      value: hasMinimumLogs && price > 0 ? `${input.analytics?.currencySymbol ?? "Rs"}${Math.round(monthlyRemaining * price)} +/- ${input.analytics?.currencySymbol ?? "Rs"}${Math.round(monthlySpread * price)}` : NOT_ENOUGH,
+      detail: hasMinimumLogs && price > 0
+        ? `Spending forecast uses actual average cigarette cost (${(input.analytics?.currencySymbol ?? "Rs")}${price.toFixed(0)}). Confidence: ${confidence}.`
+        : "Cigarette price and smoking logs are required.",
+      available: Boolean(hasMinimumLogs && price > 0),
     },
     {
       title: "Health Milestone",
-      value: input.dashboard?.dailyStatus.recoveryStage ?? input.analytics?.recoveryStage ?? "Recovery",
-      detail: buildHealthMilestone(smokeFreeSeconds),
-      available: smokeFreeSeconds > 0,
+      value: NOT_ENOUGH,
+      detail: "Health milestone prediction is not derived from smoking log statistics, so no value is fabricated here.",
+      available: false,
     },
     {
       title: "Goal Timeline",
-      value: hasPredictionData && timelineDays ? `${timelineDays} days` : "Not predictable yet",
-      detail: timelineDays ? "Estimated time to reach one or fewer cigarettes per day." : "A downward trend is needed before estimating the goal timeline.",
-      available: Boolean(hasPredictionData && timelineDays),
+      value: NOT_ENOUGH,
+      detail: "Goal timeline needs a supported long-term downward trend before a range can be shown.",
+      available: false,
     },
   ];
 
+  const profile = !hasMinimumLogs
+    ? "Building Baseline"
+    : hourly.most && (hourly.most.hour >= 20 || hourly.most.hour <= 2)
+      ? "Night Smoker"
+      : trend === "Improving"
+        ? "Improving Quitter"
+        : "Habit Smoker";
+
   const aiInsights = [
-    improvementPercent > 0
-      ? `Your smoking has decreased by ${improvementPercent}% over the most recent comparison window.`
-      : improvementPercent < 0
-        ? `Your smoking has increased by ${Math.abs(improvementPercent)}% over the most recent comparison window.`
-        : "Your recent smoking trend is currently flat.",
-    `Most smoking risk occurs between ${formatHour(peak.hour)} and ${formatHour((peak.hour + 2) % 24)}.`,
-    bestDay ? `You are strongest on ${dayNames[Number(bestDay)]}.` : "Your strongest day will appear after more dated logs.",
-    triggerStats.topShare ? `${triggerStats.top} accounts for ${triggerStats.topShare}% of logged trigger weight.` : "Trigger scoring needs more craving or Smoke DNA records.",
+    hasMinimumLogs ? `Your logs contain ${totalCigarettes} cigarettes across ${historyDays} calendar days.` : NOT_ENOUGH,
+    hasMinimumLogs && avgInterval ? `Average interval between logged cigarettes is ${Math.round(avgInterval)} minutes.` : "Average interval needs at least 2 timestamped smoking logs.",
+    historyDays >= 14 ? `Trend status is ${trend}: last 7 days ${recent7.toFixed(1)}/day vs previous 7 days ${previous7.toFixed(1)}/day.` : "Trend needs 14 days of smoking history.",
+    hasMinimumLogs && hourly.most ? `Most active hour is ${formatHour(hourly.most.hour)} based only on cigarette logs.` : "Peak hour needs more logs.",
   ];
 
   return {
     behaviorProfile: profile,
-    dataDays,
+    dataDays: historyDays,
     hasPredictionData,
-    insufficientMessage: liveSignals ? "Predictions are live but confidence improves after 7 dated smoking logs." : "Log cigarettes to generate accurate predictions.",
+    insufficientMessage: hasMinimumLogs ? (historyDays < 7 ? LIMITED : "Predictions use cigarette log history only.") : NOT_ENOUGH,
     patternCards,
     forecastCards,
     aiInsights,
     hourlyRisk,
-    trendSeries: dailyCounts.slice(-14).map((entry) => ({
+    trendSeries: series.slice(-14).map((entry) => ({
       label: shortDays[entry.date.getDay()],
       cigarettes: entry.count,
-    })).concat(hasPredictionData ? forecast7.slice(0, 3).map((value, index) => ({
+    })).concat(hasMinimumLogs ? Array.from({ length: 3 }, (_, index) => ({
       label: `P${index + 1}`,
       cigarettes: 0,
-      projected: Number(value.toFixed(1)),
+      projected: Number(currentMonthAverage.toFixed(1)),
     })) : []),
     scores: {
-      relapseRisk: Math.round(relapseRisk),
-      quitSuccess: Math.round(quitSuccess),
+      relapseRisk: Math.round(riskScore),
+      quitSuccess: historyDays >= 14 ? (trend === "Improving" ? 75 : trend === "Stable" ? 50 : 25) : 0,
       improvementPercent,
-      triggerLoad: Math.round(triggerLoad),
+      triggerLoad: trigger ? clamp((trigger[1] / Math.max(1, totalCigarettes)) * 100) : 0,
     },
-    explanation: `Calculated for the logged-in user from dashboard stats, smoke replay history, craving predictions, Smoke DNA triggers, and recent activity logs. Confidence: ${dataDays >= 7 ? "dated history" : "limited live user signals"}.`,
+    explanation: hasMinimumLogs
+      ? `Calculated only from ${logs.length} real smoking log${logs.length === 1 ? "" : "s"}. Confidence: ${confidence}.`
+      : NOT_ENOUGH,
   };
 }

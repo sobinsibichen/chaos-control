@@ -1147,6 +1147,29 @@ async function logCigarette(userId, payload) {
   }
 }
 
+async function listCigaretteHistory(userId, limit = 2000) {
+  await ensureUserBootstrap(userId);
+  const safeLimit = Math.max(1, Math.min(Number(limit) || 2000, 5000));
+  const { rows } = await pool.query(
+    `
+      SELECT id, cigarettes_count, price_per_unit, mood, logged_at
+      FROM public.cigarette_logs
+      WHERE user_id = $1
+      ORDER BY logged_at ASC
+      LIMIT $2
+    `,
+    [userId, safeLimit],
+  );
+
+  return rows.map((row) => ({
+    id: row.id,
+    cigarettesCount: toNumber(row.cigarettes_count),
+    pricePerUnit: toNumber(row.price_per_unit),
+    mood: row.mood || "",
+    loggedAt: row.logged_at,
+  }));
+}
+
 async function startQuitAttempt(userId) {
   const client = await pool.connect();
 
@@ -2118,6 +2141,7 @@ module.exports = {
   ensureUserBootstrap,
   getDashboardData,
   logCigarette,
+  listCigaretteHistory,
   startQuitAttempt,
   getRecentActivity,
   getAppsData,
