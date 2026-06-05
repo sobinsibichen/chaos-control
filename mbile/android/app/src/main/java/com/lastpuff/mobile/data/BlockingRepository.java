@@ -29,6 +29,7 @@ public final class BlockingRepository {
     private static final String KEY_LAST_BLOCKED_PACKAGE = "last_blocked_package";
     private static final String KEY_LAST_OVERLAY_TRIGGER_AT = "last_overlay_trigger_at";
     private static final String KEY_OVERLAY_VISIBLE = "overlay_visible";
+    private static final String KEY_UNINSTALL_AUTHORIZED_UNTIL = "uninstall_authorized_until";
     private static volatile BlockingDatabase database;
 
     private BlockingRepository() {
@@ -46,7 +47,7 @@ public final class BlockingRepository {
                         context.getApplicationContext(),
                         BlockingDatabase.class,
                         "last_puff_blocking"
-                    ).allowMainThreadQueries().build();
+                    ).addMigrations(BlockingDatabase.MIGRATION_1_2).allowMainThreadQueries().build();
                 }
             }
         }
@@ -61,6 +62,8 @@ public final class BlockingRepository {
             schedule.repeatType = "daily";
             schedule.blockHour = getBlockHour(context);
             schedule.blockMinute = getBlockMinute(context);
+            schedule.blockEndHour = prefs(context).getInt(KEY_BLOCK_END_HOUR, schedule.blockHour);
+            schedule.blockEndMinute = prefs(context).getInt(KEY_BLOCK_END_MINUTE, schedule.blockMinute);
             schedule.blockedAppsJson = prefs(context).getString(KEY_BLOCKED_APPS_JSON, "[]");
             schedule.enabled = prefs(context).getBoolean(KEY_ENABLED, false);
             schedule.protectionActive = prefs(context).getBoolean(KEY_PROTECTION_ACTIVE, false);
@@ -87,6 +90,8 @@ public final class BlockingRepository {
         BlockingScheduleEntity schedule = getSchedule(context);
         schedule.blockHour = blockHour;
         schedule.blockMinute = blockMinute;
+        schedule.blockEndHour = blockEndHour;
+        schedule.blockEndMinute = blockEndMinute;
         schedule.repeatType = repeatType == null || repeatType.isEmpty() ? "daily" : repeatType;
         schedule.enabled = enabled;
         schedule.protectionActive = enabled;
@@ -165,6 +170,35 @@ public final class BlockingRepository {
             .apply();
     }
 
+    public static void authorizeUninstall(Context context, long durationMillis) {
+        long expiresAt = System.currentTimeMillis() + Math.max(0L, durationMillis);
+        prefs(context)
+            .edit()
+            .putLong(KEY_UNINSTALL_AUTHORIZED_UNTIL, expiresAt)
+            .apply();
+    }
+
+    public static void clearUninstallAuthorization(Context context) {
+        prefs(context)
+            .edit()
+            .putLong(KEY_UNINSTALL_AUTHORIZED_UNTIL, 0L)
+            .apply();
+    }
+
+    public static boolean isUninstallAuthorized(Context context) {
+        long expiresAt = prefs(context).getLong(KEY_UNINSTALL_AUTHORIZED_UNTIL, 0L);
+        boolean authorized = expiresAt > System.currentTimeMillis();
+        if (!authorized && expiresAt > 0L) {
+            clearUninstallAuthorization(context);
+        }
+        return authorized;
+    }
+
+    public static long getUninstallAuthorizedUntil(Context context) {
+        long expiresAt = prefs(context).getLong(KEY_UNINSTALL_AUTHORIZED_UNTIL, 0L);
+        return expiresAt > System.currentTimeMillis() ? expiresAt : 0L;
+    }
+
     public static void setLastBlockedPackage(Context context, String packageName) {
         prefs(context)
             .edit()
@@ -209,10 +243,18 @@ public final class BlockingRepository {
     }
 
     public static int getBlockEndHour(Context context) {
+        BlockingScheduleEntity schedule = database(context).blockingScheduleDao().getSchedule();
+        if (schedule != null && isValidTime(schedule.blockEndHour, schedule.blockEndMinute)) {
+            return schedule.blockEndHour;
+        }
         return prefs(context).getInt(KEY_BLOCK_END_HOUR, getBlockHour(context));
     }
 
     public static int getBlockEndMinute(Context context) {
+        BlockingScheduleEntity schedule = database(context).blockingScheduleDao().getSchedule();
+        if (schedule != null && isValidTime(schedule.blockEndHour, schedule.blockEndMinute)) {
+            return schedule.blockEndMinute;
+        }
         return prefs(context).getInt(KEY_BLOCK_END_MINUTE, getBlockMinute(context));
     }
 
@@ -271,5 +313,9 @@ public final class BlockingRepository {
     private static String todayToken() {
         java.text.SimpleDateFormat formatter = new java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US);
         return formatter.format(new java.util.Date());
+    }
+
+    private static boolean isValidTime(int hour, int minute) {
+        return hour >= 0 && hour < 24 && minute >= 0 && minute < 60;
     }
 }

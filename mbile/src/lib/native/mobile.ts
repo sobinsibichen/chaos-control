@@ -67,6 +67,8 @@ export interface NativeProtectionStatus {
   deviceAdminActive?: boolean;
   uninstallProtectionAvailable?: boolean;
   uninstallChallengePending?: boolean;
+  uninstallAuthorized?: boolean;
+  uninstallAuthorizedUntil?: number;
   lastBlockedApp?: string;
   lastOverlayTriggerTime?: number;
   overlayVisible?: boolean;

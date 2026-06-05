@@ -1,6 +1,7 @@
 const pool = require("../config/db");
 const { emitUserRefresh, emitSocialEvent } = require("../socket/realtime");
 const { computeXp, unlockDynamicAchievements, ensureMilestone } = require("./achievementEngine");
+const { createError } = require("../utils/http");
 
 const legacyDefaultBlockedApps = [
   { appName: "Amazon", packageName: "com.amazon.mShop.android.shopping" },
@@ -21,6 +22,54 @@ function toNumber(value, fallback = 0) {
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
+}
+
+function parseScheduleWindow(blockTime) {
+  const normalized = String(blockTime || "").trim().replace(/\s+to\s+/i, "-").replace(/→/g, "-").replace(/â†’/g, "-");
+  const [startRaw, endRaw] = normalized.split("-");
+  const start = parseClockMinutes(startRaw);
+  if (start === null) {
+    return null;
+  }
+
+  const end = parseClockMinutes(endRaw) ?? ((start + 600) % 1440);
+  return { start, end };
+}
+
+function parseClockMinutes(value) {
+  if (!value) {
+    return null;
+  }
+
+  const match = String(value).trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) {
+    return null;
+  }
+
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+    return null;
+  }
+
+  return hour * 60 + minute;
+}
+
+function expandWindow(window) {
+  if (window.end > window.start) {
+    return [[window.start, window.end]];
+  }
+
+  return [
+    [window.start, window.end + 1440],
+    [window.start - 1440, window.end],
+  ];
+}
+
+function windowsOverlap(first, second) {
+  return expandWindow(first).some(([firstStart, firstEnd]) =>
+    expandWindow(second).some(([secondStart, secondEnd]) => firstStart < secondEnd && firstEnd > secondStart),
+  );
 }
 
 function getFocusLevel(score) {
@@ -1562,6 +1611,31 @@ async function saveBlockSchedule(userId, payload) {
   const blockTime = String(payload.blockTime || "").trim();
   const frequency = String(payload.frequency || "daily").trim() || "daily";
   const enabled = payload.enabled !== false;
+  const nextWindow = parseScheduleWindow(blockTime);
+
+  if (!nextWindow) {
+    throw createError(400, "Choose a valid block time.");
+  }
+
+  const existingResult = await pool.query(
+    `
+      SELECT block_time
+      FROM public.block_schedules
+      WHERE user_id = $1 AND enabled = TRUE
+      ORDER BY created_at DESC
+      LIMIT 5
+    `,
+    [userId],
+  );
+
+  const hasOverlap = existingResult.rows.some((row) => {
+    const existingWindow = parseScheduleWindow(row.block_time);
+    return existingWindow ? windowsOverlap(nextWindow, existingWindow) : false;
+  });
+
+  if (hasOverlap) {
+    throw createError(409, "This app is already scheduled during this time period. Please choose another time.");
+  }
 
   const { rows } = await pool.query(
     `

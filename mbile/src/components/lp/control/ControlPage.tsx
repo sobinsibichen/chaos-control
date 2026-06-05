@@ -1415,7 +1415,7 @@ export default function ControlPage() {
                                   {item.packageName}
                                 </div>
                               </div>
-                              <div className={`h-5 w-5 rounded-full border ${selected ? "border-foreground/30 bg-white shadow-inner" : "border-foreground/20 bg-white"}`} />
+                              <div className={`h-5 w-5 rounded-full border ${selected ? "border-black bg-black shadow-inner" : "border-foreground/20 bg-white"}`} />
                             </motion.button>
                           );
                             })}

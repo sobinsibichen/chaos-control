@@ -54,7 +54,7 @@ public final class BlockingEngine {
             return false;
         }
 
-        if (!hasRequiredBlockingPermissions(context)) {
+        if (!hasAnyMonitoringPermission(context)) {
             Log.w(TAG, "Blocking skipped until required permissions are granted");
             return false;
         }
@@ -167,8 +167,13 @@ public final class BlockingEngine {
             && isAccessibilityServiceEnabled(context);
     }
 
+    public static boolean hasAnyMonitoringPermission(Context context) {
+        return isRestrictedSettingsAllowed(context)
+            && (isAccessibilityServiceEnabled(context) || isUsageAccessGranted(context));
+    }
+
     public static void syncProtection(Context context) {
-        if (hasRequiredBlockingPermissions(context)) {
+        if (hasAnyMonitoringPermission(context) && isProtectionScheduleActive(context)) {
             startMonitoringService(context);
         } else {
             Log.w(TAG, "Protection monitor not started until required permissions are granted");
@@ -214,7 +219,7 @@ public final class BlockingEngine {
             PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );
 
-        if (!schedule.enabled || TextUtils.isEmpty(schedule.blockedAppsJson)) {
+        if (!schedule.enabled || TextUtils.isEmpty(schedule.blockedAppsJson) || !hasActiveApps(schedule.blockedAppsJson)) {
             alarmManager.cancel(pendingIntent);
             BlockingRepository.setAlarmState(context, 0L, false);
             return;
@@ -310,7 +315,7 @@ public final class BlockingEngine {
             return;
         }
 
-        if (!hasRequiredBlockingPermissions(context)) {
+        if (!hasAnyMonitoringPermission(context)) {
             Log.w(TAG, "Block screen skipped until required permissions are granted");
             return;
         }

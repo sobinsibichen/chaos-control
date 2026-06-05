@@ -10,6 +10,8 @@ public class BlockingScheduleEntity {
 
     public int blockHour;
     public int blockMinute;
+    public int blockEndHour;
+    public int blockEndMinute;
     public String repeatType;
     public boolean enabled;
     public boolean protectionActive;

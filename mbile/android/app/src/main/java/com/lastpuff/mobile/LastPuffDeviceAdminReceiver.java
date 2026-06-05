@@ -11,15 +11,14 @@ public class LastPuffDeviceAdminReceiver extends DeviceAdminReceiver {
 
     @Override
     public CharSequence onDisableRequested(Context context, Intent intent) {
-        // Android shows this warning before admin removal; Last Puff also opens the challenge gate.
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .edit()
-            .putBoolean(KEY_UNINSTALL_CHALLENGE_PENDING, true)
-            .apply();
+        if (ProtectionManager.isProtectionRemovalAuthorized(context)) {
+            return null;
+        }
 
         Intent challengeIntent = new Intent(context, MainActivity.class);
         challengeIntent.setAction(ACTION_UNINSTALL_CHALLENGE);
         challengeIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        setUninstallChallengePending(context, true);
         context.startActivity(challengeIntent);
 
         return "Complete the Last Puff unlock challenge before disabling uninstall protection.";
@@ -27,9 +26,20 @@ public class LastPuffDeviceAdminReceiver extends DeviceAdminReceiver {
 
     @Override
     public void onEnabled(Context context, Intent intent) {
+        setUninstallChallengePending(context, false);
+    }
+
+    @Override
+    public void onDisabled(Context context, Intent intent) {
+        if (!ProtectionManager.isProtectionRemovalAuthorized(context)) {
+            ProtectionManager.requireChallenge(context, "device-admin-removal");
+        }
+    }
+
+    public static void setUninstallChallengePending(Context context, boolean pending) {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
-            .putBoolean(KEY_UNINSTALL_CHALLENGE_PENDING, false)
+            .putBoolean(KEY_UNINSTALL_CHALLENGE_PENDING, pending)
             .apply();
     }
 }

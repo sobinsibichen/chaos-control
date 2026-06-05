@@ -154,6 +154,9 @@ public class ProtectionPlugin extends Plugin {
 
     @PluginMethod
     public void openAccessibilitySettings(PluginCall call) {
+        if (BlockingEngine.isAccessibilityServiceEnabled(getContext()) && !ProtectionManager.isProtectionRemovalAuthorized(getContext())) {
+            ProtectionManager.requireChallenge(getContext(), "accessibility-disable");
+        }
         Intent intent = new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS);
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         getContext().startActivity(intent);
@@ -162,6 +165,10 @@ public class ProtectionPlugin extends Plugin {
 
     @PluginMethod
     public void openAppInfo(PluginCall call) {
+        if ((BlockingRepository.isServiceRunning(getContext()) || isDeviceAdminActive())
+            && !ProtectionManager.isProtectionRemovalAuthorized(getContext())) {
+            ProtectionManager.requireChallenge(getContext(), "app-info-protection");
+        }
         Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
         intent.setData(Uri.parse("package:" + getContext().getPackageName()));
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
@@ -223,16 +230,19 @@ public class ProtectionPlugin extends Plugin {
     public void disableUninstallProtectionAfterChallenge(PluginCall call) {
         DevicePolicyManager manager = devicePolicyManager();
         ComponentName component = adminComponent();
+        ProtectionManager.authorizeProtectionRemoval(getContext());
         // Only the completed challenge path calls this, temporarily removing the uninstall block.
         if (manager != null && manager.isAdminActive(component)) {
             manager.removeActiveAdmin(component);
         }
-        setUninstallChallengePending(false);
         call.resolve(buildStatus());
     }
 
     @PluginMethod
     public void openDeviceAdminSettings(PluginCall call) {
+        if (isDeviceAdminActive() && !ProtectionManager.isProtectionRemovalAuthorized(getContext())) {
+            ProtectionManager.requireChallenge(getContext(), "device-admin-removal");
+        }
         Intent intent = new Intent(Settings.ACTION_SECURITY_SETTINGS);
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         getContext().startActivity(intent);
@@ -241,6 +251,12 @@ public class ProtectionPlugin extends Plugin {
 
     @PluginMethod
     public void openAppUninstallAfterChallenge(PluginCall call) {
+        if (!ProtectionManager.isProtectionRemovalAuthorized(getContext())) {
+            ProtectionManager.requireChallenge(getContext(), "uninstall-preparation");
+            call.resolve(buildStatus());
+            return;
+        }
+
         Intent intent = new Intent(Intent.ACTION_UNINSTALL_PACKAGE);
         intent.setData(Uri.parse("package:" + getContext().getPackageName()));
         intent.putExtra(Intent.EXTRA_RETURN_RESULT, false);
@@ -358,6 +374,8 @@ public class ProtectionPlugin extends Plugin {
         status.put("deviceAdminActive", isDeviceAdminActive());
         status.put("uninstallProtectionAvailable", true);
         status.put("uninstallChallengePending", isUninstallChallengePending());
+        status.put("uninstallAuthorized", ProtectionManager.isProtectionRemovalAuthorized(getContext()));
+        status.put("uninstallAuthorizedUntil", BlockingRepository.getUninstallAuthorizedUntil(getContext()));
         return status;
     }
 
@@ -381,11 +399,7 @@ public class ProtectionPlugin extends Plugin {
     }
 
     private void setUninstallChallengePending(boolean pending) {
-        getContext()
-            .getSharedPreferences(LastPuffDeviceAdminReceiver.PREFS_NAME, Context.MODE_PRIVATE)
-            .edit()
-            .putBoolean(LastPuffDeviceAdminReceiver.KEY_UNINSTALL_CHALLENGE_PENDING, pending)
-            .apply();
+        LastPuffDeviceAdminReceiver.setUninstallChallengePending(getContext(), pending);
     }
 
     private int countActiveApps(String rawApps) {
